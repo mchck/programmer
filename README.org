@@ -1,0 +1,25 @@
+The MC HCK SWD programmer is host software to work with SWD devices.
+
+The programmer is part of the MC HCK project, but intended to be a
+generic SWD programmer system.  Please submit patches for your
+favorite platforms.
+
+* Compatibility
+** Programmer Adapters
+- FTDI based adapters, e.g. the BusBlaster with KT-Link buffer
+- BusPirate
+- bitbanging MC HCK
+
+** Platforms
+- Freescale Kinetis K20 (e.g. MC HCK)
+
+* Contact
+Write to our mailing list at [[nerds@mchck.org]] for any questions or
+feedback.
+
+* License
+Copyright (c) 2012,2013 Simon Schubert and the MC HCK Project.
+
+The MC HCK SWD programmer is licensed under the GNU General Public
+License, either version 3 of the License, or (at your option) any
+later version.  You can find a copy of this license in [[file:COPYING]].
