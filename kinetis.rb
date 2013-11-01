@@ -6,8 +6,14 @@ class KinetisBase < ARMv7
   def initialize(adiv5)
     super(adiv5)
     @mdmap = adiv5.ap(1)
-    if !@mdmap || @mdmap.IDR.to_i != 0x001c0000
-      raise RuntimeError, "not a Kinetis device"
+    if @mdmap && @mdmap.IDR.to_i == 0x001c0000
+      # K20 device supports program_section
+      @device_flexram = true
+    elsif @mdmap && @mdmap.IDR.to_i == 0x001c0020
+      # KL25 device only supports program_longword
+      @device_flexram = false
+    else
+      raise RuntimeError, "not a supported Kinetis device"
     end
   end
 
@@ -131,6 +137,19 @@ class Kinetis < KinetisBase
         self.fcmd = 0x0b
         self.addr = addr
         self.num_words = num_words
+      end
+    end
+
+    register :FCCOB_Program_Longword, 0x04 do
+      unsigned :addr, [0, 23..0]
+      unsigned :fcmd, [3, 7..0]
+      unsigned :data, [4, 31..0]
+
+      def initialize(addr, data)
+        super()
+        self.fcmd = 0x06
+        self.addr = addr
+        self.data = data
       end
     end
 
@@ -500,8 +519,12 @@ class Kinetis < KinetisBase
       data = (data + "\0"*3).unpack('L*')
     end
 
-    if data.size != @sector_size / 4 || (addr & (@sector_size - 1) != 0)
-      raise RuntimeError, "invalid data size or alignment"
+    if @device_flexram && data.size != @sector_size / 4
+      raise RuntimeError, "invalid data size"
+    end
+
+    if addr & (@sector_size - 1) != 0
+      raise RuntimeError, "invalid data alignment"
     end
 
     # Flash config field address
@@ -512,14 +535,25 @@ class Kinetis < KinetisBase
       end
     end
 
-    if !@ftfl.FSTAT.RAMRDY
+    if @device_flexram && !@ftfl.FSTAT.RAMRDY
       # set FlexRAM to RAM
       @ftfl.cmd(FTFL::FCCOB_Set_FlexRAM.new(:ram))
     end
 
     @ftfl.cmd(FTFL::FCCOB_Erase_Sector.new(addr))
-    @flexram.write(0, data)
-    @ftfl.cmd(FTFL::FCCOB_Program_Section.new(addr, data.size))
+
+    if @device_flexram
+      @flexram.write(0, data)
+      @ftfl.cmd(FTFL::FCCOB_Program_Section.new(addr, data.size))
+    else
+      datapos = 0
+      while datapos < data.size
+        wordaddr = addr + datapos*4
+        $stderr.puts "  programming %#x with %#x" % [wordaddr, data[datapos]]
+        @ftfl.cmd(FTFL::FCCOB_Program_Longword.new(wordaddr, data[datapos]))
+        datapos += 1
+      end
+    end
   end
 
   def program(addr, data)
@@ -531,8 +565,9 @@ class Kinetis < KinetisBase
       raise RuntimeError, "can only program flash when core is halted"
     end
 
+    # NOTE: Is this needed?
     # pad data
-    if data.bytesize % @sector_size != 0
+    if @device_flexram && (data.bytesize % @sector_size != 0)
       data += ([0xff] * (@sector_size - data.bytesize % @sector_size)).pack('c*')
     end
 
