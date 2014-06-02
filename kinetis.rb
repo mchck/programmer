@@ -23,7 +23,7 @@ class KinetisBase < ARMv7
     # XXX hack
 
     # We might have a secure device
-    if (status = @mdmap.read_ap(0)) & 0b100 != 0
+    if (@mdmap.read_ap(0)) & 0b100 != 0
       Log(:kinetis, 1){ "chip is secure, need mass erase to attach" }
     end
 
@@ -252,7 +252,13 @@ class Kinetis < KinetisBase
       }
       enum :RAMSIZE, 15..12, {
         8192 => 0b0001,
-        16384 => 0b0011
+        16384 => 0b0011,
+        24576 => 0b0100,
+        32768 => 0b0101,
+        49152 => 0b0110,
+        65536 => 0b0111,
+        98304 => 0b1000,
+        131072 => 0b1001,
       }
     end
 
@@ -373,10 +379,8 @@ class Kinetis < KinetisBase
 
     register :SDID, 0x1024 do
       unsigned :REVID, 15..12
-      enum :FAMID, 6..4, {
-        :K10 => 0b000,
-        :K20 => 0b001
-      }
+      unsigned :DIEID, 11..7
+      unsigned :FAMID, 6..4
       enum :PINID, 3..0, {
         32 => 0b0010,
         48 => 0b0100,
@@ -439,14 +443,24 @@ class Kinetis < KinetisBase
     register :FCFG1, 0x104c do
       enum :NVMSIZE, 31..28, {
         0 => 0b0000,
-        32768 => 0b0011
+        32768 => 0b0011,
+        65536 => 0b0101,
+        131072 => 0b0111,
+        262144 => 0b1001,
+        524288 => 0b1011
       }
       enum :PFSIZE, 27..24, {
         32768 => 0b0011,
         65536 => 0b0101,
-        0x20000 => 0b0111
+        131072 => 0b0111,
+        262144 => 0b1001,
+        524288 => 0b1011,
+        1048576 => 0b1101
       }
       enum :EESIZE, 19..16, {
+        16384 => 0b0000,
+        8192 => 0b0001,
+        4096 => 0b0010,
         2048 => 0b0011,
         1024 => 0b0100,
         512 => 0b0101,
@@ -473,6 +487,27 @@ class Kinetis < KinetisBase
     unsigned :UID, 0x1054, :vector => 4
   end
 
+  FlashConfig = {
+    0b00000001 => {
+      :desc => "K20_50",
+      :sector_size => 1024,
+      :sector_blocks => 1,
+      :phrase_size => 4
+    },
+    0b00001001 => {
+      :desc => "K20_72",
+      :sector_size => 2048,
+      :sector_blocks => 2,
+      :phrase_size => 8
+    },
+    0b00100001 => {
+      :desc => "K22_50",
+      :sector_size => 2048,
+      :sector_blocks => 1,
+      :phrase_size => 8
+    }
+  }
+
   def initialize(adiv5, magic_halt=false)
     super(adiv5)
     begin
@@ -492,7 +527,16 @@ class Kinetis < KinetisBase
     @ftfl = Kinetis::FTFL.new(@dap)
     @flexram = Kinetis::FlexRAM.new(@dap)
     @sim = Kinetis::SIM.new(@dap)
-    @sector_size = 1024
+    flash_key = @sim.SDID.FAMID | (@sim.SDID.DIEID<<3);
+    if FlashConfig.has_key?(flash_key)
+        Log(:kinetis, 1){ "detected " + FlashConfig[flash_key][:desc] }
+        @sector_size = FlashConfig[flash_key][:sector_size]
+        @sector_blocks = FlashConfig[flash_key][:sector_blocks]
+        @phrase_size = FlashConfig[flash_key][:phrase_size]
+    else
+        raise RuntimeError, "unknown family-id and die-id combination"
+    end
+
   end
 
   def program_sector(addr, data)
@@ -518,8 +562,15 @@ class Kinetis < KinetisBase
     end
 
     @ftfl.cmd(FTFL::FCCOB_Erase_Sector.new(addr))
-    @flexram.write(0, data)
-    @ftfl.cmd(FTFL::FCCOB_Program_Section.new(addr, data.size))
+    block_num = 0
+    block_size = @sector_size/@sector_blocks
+    while block_num < @sector_blocks
+        # divide by 4 to translate bytes into words, flexram needs this
+        sector_block = data.slice(block_num*block_size/4, block_size/4)
+        @flexram.write(0, sector_block)
+        @ftfl.cmd(FTFL::FCCOB_Program_Section.new(addr+block_num*block_size, block_size/@phrase_size))
+        block_num += 1
+    end
   end
 
   def program(addr, data)
