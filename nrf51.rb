@@ -141,7 +141,7 @@ class NRF51 < ARMv7  # not actually true, it's and armv6 cortex m0 device.
   #0x10001000 UICR UICR User Information Configuration Registers
 
   def mass_erase
-
+    @nvmc.mass_erase
   end
 
   def program_sector(addr, data)
