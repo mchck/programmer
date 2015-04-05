@@ -37,12 +37,18 @@ class GDBServer
         repl = catch (:gdbreply) do
           dispatch(cmd) || ''
         end
+      rescue EOFError, Errno::EPIPE, Errno::ECONNRESET
+        raise
       rescue StandardError => e
         Log(:gdb, 1){ ([e] + e.backtrace).join("\n") }
         repl = 'E01'
       end
       reply repl if repl
     end
+
+    # optionally wait for final '?' cmd
+    cmd = read_packet
+    reply ''
   end
 
   def read_packet
@@ -95,6 +101,10 @@ class GDBServer
     when /^qAttached.*/
       # we always attach to an existing process
       '1'
+    when /^qRcmd,([[:xdigit:]]+)/
+      # monitor command
+      cmd = parse_hex_binary($1)
+      Log(:gdb, 1){ 'received command %s' % cmd}
     when /^qSupported.*/
       'PacketSize=4000;qXfer:features:read+;qXfer:memory-map:read+'
     when /^qXfer:features:read:target.xml:([[:xdigit:]]+),([[:xdigit:]]+)$/
