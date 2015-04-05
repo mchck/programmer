@@ -5,7 +5,7 @@ require 'adiv5-ap'
 
 class Adiv5
   def initialize(drv)
-    @dp = DP.new(Adiv5Swd.new(drv))
+    @dp = DP.new(drv)
 
     # power up syste + debug
     @dp.CTRLSTAT.transact do |dp|
