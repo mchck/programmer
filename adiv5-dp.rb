@@ -63,14 +63,31 @@ class Adiv5
     end
 
     def read(port, addr, opt={})
-      v = @lower.read(port, addr, opt)
+      begin
+        v = @lower.read(port, addr, opt)
+      rescue Adiv5::Fault
+        Log(:dp, 3){ "fault" }
+        self.ABORT.STKERRCLR = 1
+        raise
+      rescue Adiv5::ProtocolError
+        # XXX what do they mean by back off?
+        _ = self.IDCODE.to_i    # resync
+        retry
+      end
       Log(:dp, 2){ "read %s %08x < %s" % [port, addr, Log.hexary(v)] }
       v
     end
 
     def write(port, addr, val)
       Log(:dp, 2){ "write %s %08x = %s" % [port, addr, Log.hexary(val)] }
-      @lower.write(port, addr, val)
+      begin
+        @lower.write(port, addr, val)
+      rescue Adiv5::Fault
+        Log(:dp, 3) { "fault" }
+        # XXX error might come from previous buffered write?
+        self.ABORT.STKERRCLR = 1
+        raise
+      end
     end
 
     def get_backing(offset)

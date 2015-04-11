@@ -5,16 +5,6 @@ class Adiv5SwdCmsisDap
   class CMSISError < StandardError
   end
 
-  class ProtocolError < StandardError
-  end
-
-  class Wait < StandardError
-  end
-
-  class Fault < StandardError
-  end
-
-
   def initialize(args)
     # search for adapter
     @usb = LIBUSB::Context.new
@@ -52,7 +42,13 @@ class Adiv5SwdCmsisDap
     @packet_size = @info[:packet_size]
     @packet_count = @info[:packet_count]
 
+    cmd_dap_swj_clock(args[:speed]*1000) if args[:speed]
+
     cmd_connect(:swd)
+    reset
+  end
+
+  def reset
     cmd_dap_swj_sequence(255.chr * 7) # at least 50 high
     cmd_dap_swj_sequence([0xe79e].pack('v')) # switch-to-swd magic
     cmd_dap_swj_sequence(255.chr * 7) # at least 50 high
@@ -65,7 +61,24 @@ class Adiv5SwdCmsisDap
     (@packet_size - overhead[dir]) / 4
   end
 
-  def read(port, addr, opt)
+  def handle_fault
+    status = read(:dp, CTRLSTAT)
+    if status.WDATAERR
+      # last write data was mangled or was dropped
+      ABORT.WDERRCLR = 1
+    # XXX reissue last write
+      true
+    else
+      raise Adiv5::Fault
+      false
+    end
+  end
+
+  def maybe_wait_writebuf(req)
+    # XXX if req is not waitable
+  end
+
+  def read(port, addr, opt={})
     r = {port: port, dir: :read, addr: addr}
     if opt[:count]
       count = opt[:count]
@@ -87,11 +100,24 @@ class Adiv5SwdCmsisDap
     end
     case ret[:response]
     when :wait
-      raise Wait
+      raise Adiv5::Wait
     when :fault
-      raise Fault
-    when :proto_err, :no_exec
-      raise ProtocolError
+      handle_fault
+      XXX resubmit
+    when :proto_err
+      val = read(:dp, :read, RESEND)
+      if opt[:count]
+        ret[:val] << val
+        ret[:count] += 1
+        if ret[:count] < opt[:count]
+          ret[:val] += read(port, addr, {count: opt[:count] - ret[:count]})
+        end
+      else
+        ret[:val] = val
+      end
+    when :no_exec
+      # XXX resubmit
+      raise CMSISError
     when :ok
       # pass
     end
@@ -117,11 +143,18 @@ class Adiv5SwdCmsisDap
     end
     case ret[:response]
     when :wait
-      raise Wait
+      # XXX retry
+      raise Adiv5::Wait
     when :fault
-      raise Fault
-    when :proto_err, :no_exec
-      raise ProtocolError
+      handle_fault
+      # XXX resubmit
+    when :proto_err
+      # XXX back off: write 33 zeros?
+      # XXX retry
+      raise Adiv5::ProtocolError
+    when :no_exec
+      # XXX resubmit
+      raise CMSISError
     when :ok
       # pass
     end
@@ -184,22 +217,24 @@ class Adiv5SwdCmsisDap
       data += [r[:val]].pack('V') if r[:dir] == :write
     end
     result = submit(CMD_DAP_TRANSFER, data)
-    count, rest = result.unpack('ca*')
+    count, last_resp, rest = result.unpack('cca*')
 
     ret = []
     reqs.each_with_index do |r, i|
       r = r.dup
       ret << r
-      if i >= count
+      r[:response] = :ok
+      if i == count
+        swd_ack = {1 => :ok, 2 => :wait, 4 => :fault}
+        r[:response] = swd_ack[last_resp&7]
+        r[:response] = :proto_err if last_resp & 8 != 0
+        r[:mismatch] = true if last_resp & 16
+        next if r[:response] != :ok
+      elsif i > count
         r[:response] = :no_exec
         next
       end
 
-      resp, rest = rest.unpack('ca*')
-      swd_ack = {1 => :ok, 2 => :wait, 4 => :fault}
-      r[:response] = swd_ack[resp&7]
-      r[:response] = :proto_err if resp & 8 != 0
-      r[:mismatch] = true if resp & 16
       if r[:dir] == :read
         val, rest = rest.unpack('Va*')
         r[:val] = val
