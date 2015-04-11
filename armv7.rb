@@ -10,9 +10,16 @@ require 'armv7-fpb'
 require 'armv7-dwt'
 
 class ARMv7
-  def initialize(adiv5)
-    @dap = adiv5.dap
+  class ProbeFailure < StandardError
+  end
+
+  def initialize(bkend)
+    @bkend = bkend
+    @adiv5 = Adiv5.new(@bkend)
+    @dap = @adiv5.dap
     @scs = SCS.new(@dap)
+
+    raise ProbeFailure, "#{self.class} not found" if !detect
   end
 
   def probe!

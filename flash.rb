@@ -4,8 +4,7 @@ require 'device'
 require 'backend-driver'
 
 $stderr.puts "Attaching debugger..."
-adiv5 = Adiv5.new(BackendDriver.from_string(ARGV[0]))
-k = Device.detect(adiv5)
+k = Device.detect(BackendDriver.from_string(ARGV[0]))
 
 if ARGV[1] == '--mass-erase'
   $stderr.puts "done."

@@ -3,12 +3,16 @@ require 'armv7'
 require 'register'
 
 class KinetisBase < ARMv7
-  def initialize(adiv5)
-    super(adiv5)
-    @mdmap = adiv5.ap(1)
-    if !@mdmap || @mdmap.IDR.to_i != 0x001c0000
-      raise RuntimeError, "not a Kinetis device"
-    end
+  SUPPORTED_IDS = [0x001c0000, 0x001c0020]
+
+  def detect
+    mdmap = @adiv5.ap(1)
+    mdmap && SUPPORTED_IDS.include?(mdmap.IDR.to_i)
+  end
+
+  def initialize(bkend)
+    super(bkend)
+    @mdmap = @adiv5.ap(1)
   end
 
   def magic_halt
@@ -514,17 +518,9 @@ class Kinetis < KinetisBase
     }
   }
 
-  def self.detect(adiv5)
-    mdmap = adiv5.ap(1)
-    if mdmap && mdmap.IDR.to_i == 0x001c0000
-      Log(:Kinetis, 1) {"Detected Kinetis."}
-      return Kinetis.new(adiv5)
-    end
-    return nil
-  end
+  def initialize(bkend, magic_halt=false)
+    super(bkend)
 
-  def initialize(adiv5, magic_halt=false)
-    super(adiv5)
     begin
       self.magic_halt if magic_halt
       self.probe!
@@ -551,7 +547,6 @@ class Kinetis < KinetisBase
     else
         raise RuntimeError, "unknown family-id and die-id combination %02x" % flash_key
     end
-
   end
 
   def program_sector(addr, data)

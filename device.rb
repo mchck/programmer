@@ -5,24 +5,24 @@ require 'log'
 
 module Device
   class << self
-
-    def detect(adiv5)
-
+    def detect(bkend)
       Log(:device, 1){ "detecting device" }
 
-      ret = NRF51.detect(adiv5)
-      if !ret
-        ret = Kinetis.detect(adiv5)
+      devices = [Kinetis, NRF51]
+      begin
+        if !devices.empty?
+          d = devices.pop
+          Log(:device, 2){'trying %s' % d}
+          dev = d.new(bkend)
+          Log(:device, 1){'detected %s' % dev.class}
+          return dev
+        end
+      rescue Exception => e
+        Log(:device, 2){([e]+e.backtrace).join("\n")}
+        retry
       end
 
-      if !ret
-        raise RuntimeError, "Unable to detect device."
-      end
-
-      return ret
-
+      raise RuntimeError, "Unable to detect device."
     end
-
   end
-
 end

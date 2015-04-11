@@ -4,25 +4,14 @@ require 'register'
 require 'log'
 
 class NRF51 < ARMv7  # not actually true, it's and armv6 cortex m0 device.
-  def self.detect(adiv5)
-
-    mdmap = adiv5.ap(0)
-    if mdmap && mdmap.IDR.to_i == 0x4770021
-      Log(:nrf51, 1) {"Detected nRF51."}
-      return NRF51.new(adiv5)
-    else
-      return nil
-    end
+  def detect
+    @dap.IDR.to_i == 0x4770021
   end
 
-  def initialize(adiv5, magic_halt=false)
-    super(adiv5)
-    @mdmap = adiv5.ap(0)
+  def initialize(bkend, magic_halt=false)
+    super(bkend)
 
-    if !@mdmap || @mdmap.IDR.to_i != 0x4770021
-      raise RuntimeError, "not an Nrf51 device"
-    end
-    cpuid = adiv5.dap.read(0xE000ED00)
+    cpuid = @dap.read(0xE000ED00)
     if cpuid != 0x410CC200
       raise RuntimeError, "not a Cortex M0"
     end
@@ -33,10 +22,7 @@ class NRF51 < ARMv7  # not actually true, it's and armv6 cortex m0 device.
     @sector_size = @ficr.CODEPAGESIZE
 
     self.probe!
-
   end
-
-
 
   class NVMC # Non-Volatile Memory Controller
     include Peripheral
