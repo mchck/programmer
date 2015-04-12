@@ -20,6 +20,22 @@ class BitbangSwd
     end
   end
 
+  def transfer_block(dir, port, addr, count_or_data)
+    count_or_data = count_or_data.times unless count_or_data.respond_to? :each
+
+    ack, val = nil, []
+    count_or_data.each do |thisval|
+      ack, thisval = transfer(dir, port, addr, thisval)
+      if ack == Adiv5Swd::ACK_OK
+        val << thisval if dir == :in
+      else
+        break
+      end
+    end
+
+    [ack, val]
+  end
+
   def transfer(dir, port, addr, data=nil)
     cmd = 0x81
     case port

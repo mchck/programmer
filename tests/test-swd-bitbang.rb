@@ -57,4 +57,16 @@ class TestBitbang < MiniTest::Test
       @d.transfer(:in, :dp, 0)
     }
   end
+
+  def test_transfer_block
+    @m.expect(:write_cmd, OK, [0xa5.chr])
+    @m.expect(:read_word_and_parity, [3, 0])
+    @m.expect(:write_cmd, OK, [0xa5.chr])
+    @m.expect(:read_word_and_parity, [4, 1])
+    @m.expect(:write_cmd, OK, [0xa5.chr])
+    @m.expect(:read_word_and_parity, [5, 0])
+    ack, val = @d.transfer_block(:in, :dp, 0, 3)
+    assert_equal OK, ack
+    assert_equal [3,4,5], val
+  end
 end
