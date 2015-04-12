@@ -13,6 +13,7 @@ class Adiv5Swd
   ACK_OK = 1
   ACK_WAIT = 2
   ACK_FAULT = 4
+  ParityError = 8
 
   def initialize(drv)
     @drv = drv

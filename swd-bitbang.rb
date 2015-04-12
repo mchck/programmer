@@ -20,33 +20,37 @@ class BitbangSwd
     end
   end
 
-  def transfer_block(dir, port, addr, count_or_data)
-    count_or_data = count_or_data.times unless count_or_data.respond_to? :each
+  def transfer_block(req)
+    seq = req[:val]
+    seq = seq.times unless seq.respond_to? :each
 
-    ack, val = nil, []
-    count_or_data.each do |thisval|
-      ack, thisval = transfer(dir, port, addr, thisval)
-      if ack == Adiv5Swd::ACK_OK
-        val << thisval if dir == :in
+    ret = req.dup
+    ret[:val] = []
+    seq.each do |thisval|
+      r = req.dup
+      r[:val] = thisval
+      thisret = transfer(r)
+      ret[:ack] = thisret[:ack]
+      if thisret[:ack] == Adiv5Swd::ACK_OK
+        ret[:val] << thisret[:val] if req[:dir] == :in
       else
         break
       end
     end
-
-    [ack, val]
+    ret
   end
 
-  def transfer(dir, port, addr, data=nil)
+  def transfer(req)
     cmd = 0x81
-    case port
+    case req[:port]
     when :ap
       cmd |= 0x2
     end
-    case dir
+    case req[:dir]
     when :in
       cmd |= 0x4
     end
-    cmd |= ((addr & 0xc) << 1)
+    cmd |= ((req[:addr] & 0xc) << 1)
     parity = cmd
     parity ^= parity >> 4
     parity ^= parity >> 2
@@ -55,21 +59,23 @@ class BitbangSwd
       cmd |= 0x20
     end
 
-    Log(:phys, 1){ 'transfer %02x = %s %s %x' % [cmd, dir, port, addr] }
+    Log(:phys, 1){ 'transfer %02x = %s %s %x' % [cmd, req[:dir], req[:port], req[:addr]] }
 
-    ack = @lower.write_cmd cmd.chr
+    ret = req.dup
+    ret[:ack] = @lower.write_cmd cmd.chr
 
-    case ack
+    case ret[:ack]
     when Adiv5Swd::ACK_OK
-      case dir
+      case req[:dir]
       when :out
-        @lower.write_word_and_parity(data, calc_parity(data))
+        @lower.write_word_and_parity(req[:val], calc_parity(req[:val]))
       when :in
         data, par = @lower.read_word_and_parity
         cal_par = calc_parity data
         if par != cal_par
-          raise Adiv5::ParityError
+          ret[:ack] = Adiv5Swd::ParityError
         end
+        ret[:val] = data
       end
     when Adiv5Swd::ACK_WAIT, Adiv5Swd::ACK_FAULT
       # nothing
@@ -79,7 +85,7 @@ class BitbangSwd
 
       @lower.read_word_and_parity
     end
-    [ack, data]
+    ret
   end
 
   def calc_parity(data)
