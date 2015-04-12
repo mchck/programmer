@@ -1,4 +1,4 @@
-require 'adiv5-swd'
+require 'adiv5'
 require 'log'
 
 class BitbangSwd
@@ -9,61 +9,65 @@ class BitbangSwd
   ACK_WAIT = 2
   ACK_FAULT = 4
 
-  def initialize(opt = {})
-    @opt = opt
+  def initialize(lower)
+    @lower = lower
   end
 
   def raw_out(seq, seqlen=nil)
     seqlen ||= seq.length * 8
-    Log(:phys, 1){ "swd raw: #{seq.unpack("B#{seqlen}").first}" }
+    Log(:phys, 1){ "swd raw: %s" % seq.unpack("B#{seqlen}").first }
     if seqlen >= 8
-      write_bytes(seq[0..(seqlen / 8)])
+      @lower.write_bytes(seq[0..(seqlen / 8)])
     end
     if seqlen % 8 > 0
-      write_bits(seq[-1], seqlen % 8)
+      @lower.write_bits(seq[-1], seqlen % 8)
     end
   end
 
-  def transact(cmd, data=nil)
-    Log(:phys, 1){ 'transact %08b' % cmd }
-    case cmd & 0x4
-    when 0
-      dir = :out
-    else
-      dir = :in
+  def transact(dir, port, addr, data=nil)
+    cmd = 0x81
+    case port
+    when :ap
+      cmd |= 0x2
+    end
+    case dir
+    when :in
+      cmd |= 0x4
+    end
+    cmd |= ((addr & 0xc) << 1)
+    parity = cmd
+    parity ^= parity >> 4
+    parity ^= parity >> 2
+    parity ^= parity >> 1
+    if parity & 1 != 0
+      cmd |= 0x20
     end
 
-    ack = write_cmd cmd.chr
+    Log(:phys, 1){ 'transact %02x = %s %s %x' % [cmd, dir, port, addr] }
+
+    ack = @lower.write_cmd cmd.chr
 
     case ack
     when ACK_OK
-      # empty
-    when ACK_WAIT
-      raise Adiv5Swd::Wait
-    when ACK_FAULT
-      raise Adiv5Swd::Fault
+      case dir
+      when :out
+        @lower.write_word_and_parity(data, calc_parity(data))
+      when :in
+        data, par = @lower.read_word_and_parity
+        cal_par = calc_parity data
+        if par != cal_par
+          raise Adiv5::ParityError
+        end
+      end
+    when ACK_WAIT, ACK_FAULT
+      # nothing
     else
       # we read data right now, just to make sure that we will never
       # work against the protocol
-      if dir == :in
-        data, par = read_word_and_parity
-      end
 
-      raise Adiv5Swd::ProtocolError
+      @lower.read_word_and_parity
     end
-
-    case dir
-    when :out
-      write_word_and_parity(data, calc_parity(data))
-      nil
-    when :in
-      data, par = read_word_and_parity
-      cal_par = calc_parity data
-      if par != cal_par
-        raise Adiv5Swd::ParityError
-      end
-      data
-    end
+    [ack, data]
   end
 
   def calc_parity(data)

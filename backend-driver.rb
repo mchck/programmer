@@ -12,11 +12,11 @@ module BackendDriver
     def create(name, opts)
       case name
       when 'ftdi', 'busblaster'
-        Adiv5Swd.new(FtdiSwd.new(opts))
+        Adiv5Swd.new(BitbangSwd.new(FtdiSwd.new(opts)))
       when 'buspirate'
-        Adiv5Swd.new(BusPirateSwd.new(opts))
+        Adiv5Swd.new(BitbangSwd.new(BusPirateSwd.new(opts)))
       when 'mchck'
-        Adiv5Swd.new(MchckBitbangSwd.new(opts))
+        Adiv5Swd.new(BitbangSwd.new(MchckBitbangSwd.new(opts)))
       when 'cmsis-dap'
         Adiv5SwdCmsisDap.new(opts)
       end

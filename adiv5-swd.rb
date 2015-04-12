@@ -84,23 +84,6 @@ class Adiv5Swd
 
     Log(:swd, 2){ "SWD transaction #{port} #{dir} #{addr}, try #{try}" }
 
-    cmd = 0x81
-    case port
-    when :ap
-      cmd |= 0x2
-    end
-    case dir
-    when :in
-      cmd |= 0x4
-    end
-    cmd |= ((addr & 0xc) << 1)
-    parity = cmd
-    parity ^= parity >> 4
-    parity ^= parity >> 2
-    parity ^= parity >> 1
-    if parity & 1 != 0
-      cmd |= 0x20
-    end
     @drv.transact(cmd, data)
   rescue Wait
     Log(:swd, 2){ 'SWD WAIT, retrying' }
