@@ -20,7 +20,7 @@ class BitbangSwd
     end
   end
 
-  def transact(dir, port, addr, data=nil)
+  def transfer(dir, port, addr, data=nil)
     cmd = 0x81
     case port
     when :ap
@@ -39,7 +39,7 @@ class BitbangSwd
       cmd |= 0x20
     end
 
-    Log(:phys, 1){ 'transact %02x = %s %s %x' % [cmd, dir, port, addr] }
+    Log(:phys, 1){ 'transfer %02x = %s %s %x' % [cmd, dir, port, addr] }
 
     ack = @lower.write_cmd cmd.chr
 
