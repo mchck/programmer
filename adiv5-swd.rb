@@ -1,23 +1,18 @@
 require 'log'
+require 'adiv5'
 
 class Adiv5Swd
   ABORT = 0
+  IDCODE = 0
   SELECT = 8
   RESEND = 8
   RDBUFF = 12
 
-  class ProtocolError < StandardError
-  end
+  SWD_MAGIC = 0xe79e
 
-  class ParityError < StandardError
-  end
-
-  class Wait < StandardError
-  end
-
-  class Fault < StandardError
-  end
-
+  ACK_OK = 1
+  ACK_WAIT = 2
+  ACK_FAULT = 4
 
   def initialize(drv)
     @drv = drv
@@ -30,7 +25,7 @@ class Adiv5Swd
 
   def switch_to_swd
     @drv.raw_out(255.chr * 7)        # at least 50 high
-    @drv.raw_out([0xe79e].pack('v')) # magic number
+    @drv.raw_out([SWD_MAGIC].pack('v')) # magic number
     reset
   end
 
@@ -39,12 +34,13 @@ class Adiv5Swd
     @drv.raw_out(0.chr)              # at least 1 low
     @drv.flush!
     begin
-      @drv.transact(0xa5)       # read DPIDR
+      ack, _ = @drv.transact(:in, :dp, IDCODE)       # read DPIDR
+      raise true if ack != ACK_OK
     rescue
       # If we fail, try again.  We might have been in an unfortunate state.
       @drv.raw_out(255.chr * 7) # at least 50 high
       @drv.raw_out(0.chr)       # at least 1 low
-      @drv.transact(0xa5)       # read DPIDR
+      @drv.transact(:in, :dp, IDCODE)       # read DPIDR
     end
   end
 
@@ -54,7 +50,9 @@ class Adiv5Swd
 
     Log(:swd, 2){ 'read  %s %x (%d words)...' % [port, addr, readcount] }
     readcount.times do |i|
-      ret << transact(port, :in, addr)
+      ack, data = @drv.transact(:in, port, addr)
+      # XXX check ack
+      ret << data
     end
     # reads to the AP are posted, so we need to get the result in a
     # separate transaction.
@@ -62,7 +60,9 @@ class Adiv5Swd
       # first discard the first bogus result
       ret.shift
       # add last posted result
-      ret << transact(:dp, :in, RDBUFF)
+      ack, data = @drv.transact(:in, :dp, RDBUFF)
+      # XXX check ack
+      ret << data
     end
     Log(:swd, 1){ ['read  %s %x <' % [port, addr], *ret.map{|e| "%08x" % e}] }
 
@@ -74,47 +74,8 @@ class Adiv5Swd
     val = [val] unless val.respond_to? :each
     Log(:swd, 1){ ['write %s %x =' % [port, addr], *val.map{|e| "%08x" % e}] }
     val.each do |v|
-      transact(port, :out, addr, v)
+      @drv.transact(:out, port, addr, v)
     end
-  end
-
-  def transact(port, dir, addr, data=nil)
-    try ||= 0
-    try += 1
-
-    Log(:swd, 2){ "SWD transaction #{port} #{dir} #{addr}, try #{try}" }
-
-    @drv.transact(cmd, data)
-  rescue Wait
-    Log(:swd, 2){ 'SWD WAIT, retrying' }
-    retry
-
-  # XXX we might have to repeat the previous write instead of this transaction
-  # the fault/protocolerror might actually refer to the preceeding transaction.
-  rescue ProtocolError
-    if try <= 3
-      Log(:swd, 2){ 'SWD protocol error, retrying' }
-      reset
-      retry
-    else
-      Log(:swd, 2){ 'SWD protocol error unrecoverable, aborting' }
-      raise
-    end
-  rescue ParityError
-    Log(:swd, 2){ 'SWD parity error, restarting' }
-    if port == :ap || addr == RDBUFF
-      # If this transfer read from the AP, we have to read from RESEND
-      # instead.
-      read(:dp, RESEND)
-    else
-      # We can repeat simple DP reads
-      retry
-    end
-  rescue Fault
-    Log(:swd, 2){ 'SWD fault, clearing sticky error' }
-    # clear sticky error
-    transact(:dp, :out, ABORT, 1 << 2)
-    raise
   end
 end
 

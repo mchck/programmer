@@ -2,7 +2,7 @@ $: << '..'
 require 'minitest/autorun'
 require 'swd-bitbang'
 
-class TestBitbang < MiniTest::Unit::TestCase
+class TestBitbang < MiniTest::Test
   OK = 1
   WAIT = 2
   FAULT = 4

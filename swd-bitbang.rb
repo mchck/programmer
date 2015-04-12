@@ -5,10 +5,6 @@ class BitbangSwd
   # We need to write on the negative edge, i.e. before asserting CLK.
   # We need to read on the positive edge, i.e. after having asserted CLK.
 
-  ACK_OK = 1
-  ACK_WAIT = 2
-  ACK_FAULT = 4
-
   def initialize(lower)
     @lower = lower
   end
@@ -48,7 +44,7 @@ class BitbangSwd
     ack = @lower.write_cmd cmd.chr
 
     case ack
-    when ACK_OK
+    when Adiv5Swd::ACK_OK
       case dir
       when :out
         @lower.write_word_and_parity(data, calc_parity(data))
@@ -59,7 +55,7 @@ class BitbangSwd
           raise Adiv5::ParityError
         end
       end
-    when ACK_WAIT, ACK_FAULT
+    when Adiv5Swd::ACK_WAIT, Adiv5Swd::ACK_FAULT
       # nothing
     else
       # we read data right now, just to make sure that we will never
