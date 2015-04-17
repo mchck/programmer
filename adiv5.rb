@@ -4,9 +4,6 @@ require 'adiv5-dp'
 require 'adiv5-ap'
 
 class Adiv5
-  class ParityError < StandardError
-  end
-
   class Wait < StandardError
   end
 

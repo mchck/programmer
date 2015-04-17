@@ -1,6 +1,6 @@
 require 'swd-mchck-bitbang'
 require 'swd-buspirate'
-require 'adiv5-swd-cmsis-dap'
+require 'cmsis-dap'
 begin
   require 'swd-ftdi'
 rescue LoadError
@@ -18,7 +18,9 @@ module BackendDriver
       when 'mchck'
         Adiv5Swd.new(BitbangSwd.new(MchckBitbangSwd.new(opts)))
       when 'cmsis-dap'
-        Adiv5SwdCmsisDap.new(opts)
+        Adiv5Swd.new(CmsisDap.new(opts))
+      else
+        raise RuntimeError, "unknown driver name `#{name}'"
       end
     end
 

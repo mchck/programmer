@@ -18,13 +18,13 @@ class TestAdiv5Swd < MiniTest::Test
     @m.expect(:raw_out, nil, [255.chr*7])
     @m.expect(:raw_out, nil, [0.chr])
     @m.expect(:flush!, nil)
-    @m.expect(:transact, [OK, 0], [:in, :dp, 0])
+    @m.expect(:transfer, [OK, 0], [{op: :read, port: :dp, addr: 0}])
 
     # clear abort
-    @m.expect(:transact, [OK], [:out, :dp, 0, 0x1e])
+    @m.expect(:transfer, [OK], [{op: :write, port: :dp, addr: 0, val: 0x1e}])
 
     # reset dp bank
-    @m.expect(:transact, [OK], [:out, :dp, 8, 0])
+    @m.expect(:transfer, [OK], [{op: :write, port: :dp, addr: 8, val: 0}])
 
     @m.expect(:flush!, nil)
 

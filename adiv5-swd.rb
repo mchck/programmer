@@ -35,13 +35,13 @@ class Adiv5Swd
     @drv.raw_out(0.chr)              # at least 1 low
     @drv.flush!
     begin
-      ack, _ = @drv.transact(:in, :dp, IDCODE)       # read DPIDR
+      ack, _ = @drv.transfer(op: :read, port: :dp, addr: IDCODE)       # read DPIDR
       raise true if ack != ACK_OK
     rescue
       # If we fail, try again.  We might have been in an unfortunate state.
       @drv.raw_out(255.chr * 7) # at least 50 high
       @drv.raw_out(0.chr)       # at least 1 low
-      @drv.transact(:in, :dp, IDCODE)       # read DPIDR
+      @drv.transfer(op: :read, port: :dp, addr: IDCODE)       # read DPIDR
     end
   end
 
@@ -49,33 +49,44 @@ class Adiv5Swd
     readcount = opt[:count] || 1
     ret = []
 
-    Log(:swd, 2){ 'read  %s %x (%d words)...' % [port, addr, readcount] }
-    readcount.times do |i|
-      ack, data = @drv.transact(:in, port, addr)
-      # XXX check ack
-      ret << data
+    Log(:swd, 2){ 'read %s %x (%d words)...' % [port, addr, readcount] }
+    req = {op: :read, port: port, addr: addr}
+    if !opt[:count]
+      reply = @drv.transfer(req)
+    else
+      req[:count] = readcount
+      reply = @drv.transfer_block(req)
     end
-    # reads to the AP are posted, so we need to get the result in a
-    # separate transaction.
-    if port == :ap
-      # first discard the first bogus result
-      ret.shift
-      # add last posted result
-      ack, data = @drv.transact(:in, :dp, RDBUFF)
-      # XXX check ack
-      ret << data
-    end
-    Log(:swd, 1){ ['read  %s %x <' % [port, addr], *ret.map{|e| "%08x" % e}] }
 
-    ret = ret.first if not opt[:count]
+    case reply[:ack]
+    when ACK_OK
+      # yey
+    when ACK_FAULT
+      # check WRERROR
+      raise Adiv5::Fault
+    when ACK_WAIT
+      raise Adiv5::Wait
+    when ParityError
+      # XXX retry
+    else
+      # random other ack - protocol error
+      # XXX retry
+    end
+
+    ret = reply[:val]
+
+    Log(:swd, 1){ v = ret; v = [v] if !v.respond_to? :map; ['read  %s %x <' % [port, addr], *v.map{|e| "%08x" % e}] }
+
     ret
   end
 
   def write(port, addr, val)
-    val = [val] unless val.respond_to? :each
-    Log(:swd, 1){ ['write %s %x =' % [port, addr], *val.map{|e| "%08x" % e}] }
-    val.each do |v|
-      @drv.transact(:out, port, addr, v)
+    Log(:swd, 1){ v = val; v = [v] if !v.respond_to? :map; ['write %s %x =' % [port, addr], *v.map{|e| "%08x" % e}] }
+    req = {op: :write, port: port, addr: addr, val: val}
+    if !val.is_a? Array
+      @drv.transfer(req)
+    else
+      @drv.transfer_block(req)
     end
   end
 end

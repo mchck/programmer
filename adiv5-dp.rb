@@ -69,10 +69,6 @@ class Adiv5
         Log(:dp, 3){ "fault" }
         self.ABORT.STKERRCLR = 1
         raise
-      rescue Adiv5::ProtocolError
-        # XXX what do they mean by back off?
-        _ = self.IDCODE.to_i    # resync
-        retry
       end
       Log(:dp, 2){ "read %s %08x < %s" % [port, addr, Log.hexary(v)] }
       v

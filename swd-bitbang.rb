@@ -29,10 +29,11 @@ class BitbangSwd
     seq.each do |thisval|
       r = req.dup
       r[:val] = thisval
+      # XXX inefficient for reads, always accessing RDBUFF
       thisret = transfer(r)
       ret[:ack] = thisret[:ack]
       if thisret[:ack] == Adiv5Swd::ACK_OK
-        ret[:val] << thisret[:val] if req[:dir] == :in
+        ret[:val] << thisret[:val] if req[:op] == :read
       else
         break
       end
@@ -46,8 +47,8 @@ class BitbangSwd
     when :ap
       cmd |= 0x2
     end
-    case req[:dir]
-    when :in
+    case req[:op]
+    when :read
       cmd |= 0x4
     end
     cmd |= ((req[:addr] & 0xc) << 1)
@@ -59,21 +60,29 @@ class BitbangSwd
       cmd |= 0x20
     end
 
-    Log(:phys, 1){ 'transfer %02x = %s %s %x' % [cmd, req[:dir], req[:port], req[:addr]] }
+    Log(:phys, 1){ 'transfer %02x = %s %s %x' % [cmd, req[:op], req[:port], req[:addr]] }
 
     ret = req.dup
     ret[:ack] = @lower.write_cmd cmd.chr
 
     case ret[:ack]
     when Adiv5Swd::ACK_OK
-      case req[:dir]
-      when :out
+      case req[:op]
+      when :write
         @lower.write_word_and_parity(req[:val], calc_parity(req[:val]))
-      when :in
+      when :read
         data, par = @lower.read_word_and_parity
         cal_par = calc_parity data
         if par != cal_par
           ret[:ack] = Adiv5Swd::ParityError
+        end
+
+        # reads to the AP are posted, so we need to get the result in a
+        # separate transfer.
+        if req[:port] == :ap
+          rdbufret = transfer(dir: :read, port: :dp, addr: Adiv5Swd::RDBUFF)
+          ret[:ack] = rdbufret[:ack]
+          data = rdbufret[:val]
         end
         ret[:val] = data
       end
