@@ -66,19 +66,42 @@ class CmsisDap
     ret = req.dup
     ret[:val] = []
 
-    count = req[:count]
+    r = req.dup
+    case req[:op]
+    when :read
+      count = req[:count]
+    when :write
+      count = req[:val].count
+    end
+
+    pos = 0
+
     while count > 0
       c = count
-      if c > max_transfer_block(:read)
-        c = max_transfer_block(:read)
+      if c > max_transfer_block(req[:op])
+        c = max_transfer_block(req[:op])
       end
-      r[:count] = c
+
+      case req[:op]
+      when :read
+        r[:count] = c
+      when :write
+        r[:val] = req[:val][pos,c]
+      end
+
       thisret = cmd_dap_transfer_block(r)
       ret[:ack] = thisret[:ack]
+
       if thisret[:count] > 0
-        ret[:val] += thisret[:val] if req[:op] == :read
+        if req[:op] == :read
+          ret[:val] += thisret[:val]
+        else
+          r[:val] = r[:val][thisret[:count]..-1]
+        end
         count -= thisret[:count]
+        pos += thisret[:count]
       end
+
       if thisret[:ack] != Adiv5Swd::ACK_OK
         break
       end
