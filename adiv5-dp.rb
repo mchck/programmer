@@ -67,7 +67,10 @@ class Adiv5
         v = @lower.read(port, addr, opt)
       rescue Adiv5::Fault
         Log(:dp, 3){ "fault" }
-        self.ABORT.STKERRCLR = 1
+        self.ABORT.transact do |a|
+          a.zero!
+          a.STKERRCLR = 1
+        end
         raise
       end
       Log(:dp, 2){ "read %s %08x < %s" % [port, addr, Log.hexary(v)] }
@@ -81,7 +84,10 @@ class Adiv5
       rescue Adiv5::Fault
         Log(:dp, 3) { "fault" }
         # XXX error might come from previous buffered write?
-        self.ABORT.STKERRCLR = 1
+        self.ABORT.transact do |a|
+          a.zero!
+          a.STKERRCLR = 1
+        end
         raise
       end
     end
