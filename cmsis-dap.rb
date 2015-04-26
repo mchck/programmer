@@ -6,6 +6,11 @@ class CmsisDap
   end
 
   def initialize(args)
+    select_device(args)
+    setup_connection(args)
+  end
+
+  def select_device(args)
     # search for adapter
     @usb = LIBUSB::Context.new
     match = {}
@@ -33,8 +38,6 @@ class CmsisDap
     @inep = @iface.settings[0].endpoints.select{|e| e.direction == :in}.first
     @dev.claim_interface(@iface)
     @packet_size = 64
-
-    setup_connection(args)
   end
 
   def setup_connection(args)
