@@ -189,6 +189,7 @@ class CmsisDap
 
     ret = []
     reqs.each_with_index do |r, i|
+      i += 1                    # each_with_index is 0 based
       r = r.dup
       r[:ack] = Adiv5Swd::ACK_OK
       ret << r
