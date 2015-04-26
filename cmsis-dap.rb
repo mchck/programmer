@@ -48,6 +48,7 @@ class CmsisDap
     cmd_dap_swj_clock(args[:speed]*1000) if args[:speed]
 
     cmd_connect(:swd)
+    reset_target(true) if args[:reset] && args[:reset] != 0
   end
 
   def raw_out(seq, len=seq.bytesize*8)
@@ -57,10 +58,11 @@ class CmsisDap
   def flush!
   end
 
-  def transfer_block(req)
-    seq = req[:val]
-    seq = seq.times unless seq.respond_to? :each
+  def reset_target(assert)
+    cmd_dap_swj_pins(assert ? 0 : 0x80, 0x80, 0)
+  end
 
+  def transfer_block(req)
     ret = req.dup
     ret[:val] = []
 
@@ -99,6 +101,7 @@ class CmsisDap
 
   CMD_DAP_INFO = 0
   CMD_CONNECT = 2
+  CMD_DAP_SWJ_PINS = 0x10
   CMD_DAP_SWJ_CLOCK = 0x11
   CMD_DAP_SWJ_SEQUENCE = 0x12
   CMD_DAP_TRANSFER = 5
@@ -133,6 +136,11 @@ class CmsisDap
     modetab = {swd: 1, jtag: 2}
     r = submit(CMD_CONNECT, [modetab[mode]].pack('c'))
     raise RuntimeError "could not connect as #{mode}" if r.unpack('C').first == 0
+  end
+
+  def cmd_dap_swj_pins(out, select, wait)
+    val = submit(CMD_DAP_SWJ_PINS, [out, select, wait].pack('ccV'))
+    val.unpack('C').first
   end
 
   def cmd_dap_swj_clock(freq)
