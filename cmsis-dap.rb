@@ -1,5 +1,6 @@
 require 'libusb'
 require 'log'
+require 'adiv5-swd'
 
 class CmsisDap
   class CMSISError < StandardError
