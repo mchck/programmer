@@ -346,8 +346,8 @@ if $0 == __FILE__
     cmd = ARGV[2..-1]
   end
 
-  adiv5 = Adiv5.new(BackendDriver.from_string(ARGV[0]))
-  k = Device.detect(adiv5)
+  bkend = BackendDriver.from_string(ARGV[0])
+  k = Device.detect(bkend)
 
   if cmd
     trap("INT", "IGNORE")
