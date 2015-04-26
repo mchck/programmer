@@ -109,8 +109,8 @@ class CmsisDap
       fwver: 4,
       target_vendor: 5,
       target_device: 6,
-      capabilities: [0xf0, ->(d){{swd: 1, jtag: 2}.select{|k, v| d.unpack('c').first & v != 0}.map(&:first)}],
-      packet_count: [0xfe, ->(d){d.unpack('c').first}],
+      capabilities: [0xf0, ->(d){{swd: 1, jtag: 2}.select{|k, v| d.unpack('C').first & v != 0}.map(&:first)}],
+      packet_count: [0xfe, ->(d){d.unpack('C').first}],
       packet_size: [0xff, ->(d){d.unpack('v').first}]
     }
 
@@ -118,7 +118,7 @@ class CmsisDap
     ids.each do |k, v|
       v, cb = v if v.is_a? Array
       buf = submit(CMD_DAP_INFO, [v].pack('c*'))
-      len, rest = buf.unpack('ca*')
+      len, rest = buf.unpack('Ca*')
       rest = rest[0,len]
       rest = cb.(rest) if cb
       ret[k] = rest
@@ -129,7 +129,7 @@ class CmsisDap
   def cmd_connect(mode)
     modetab = {swd: 1, jtag: 2}
     r = submit(CMD_CONNECT, [modetab[mode]].pack('c'))
-    raise RuntimeError "could not connect as #{mode}" if r.unpack('c').first == 0
+    raise RuntimeError "could not connect as #{mode}" if r.unpack('C').first == 0
   end
 
   def cmd_dap_swj_clock(freq)
@@ -151,7 +151,7 @@ class CmsisDap
       data += [r[:val]].pack('V') if r[:op] == :write
     end
     result = submit(CMD_DAP_TRANSFER, data)
-    count, last_resp, rest = result.unpack('cca*')
+    count, last_resp, rest = result.unpack('CCa*')
 
     ret = []
     reqs.each_with_index do |r, i|
@@ -195,7 +195,7 @@ class CmsisDap
     result = submit(CMD_DAP_TRANSFER_BLOCK, data)
     ret = req.dup
 
-    count, resp, rest = result.unpack('vca*')
+    count, resp, rest = result.unpack('vCa*')
     ret[:ack] = resp
     ret[:ack] = Adiv5Swd::ParityError if resp & 8 != 0
     ret[:count] = count
@@ -229,13 +229,13 @@ class CmsisDap
     end
     Log(:swd, 3){ "reply %s" % retdata.unpack('H*').first }
 
-    retcmd, rest = retdata.unpack('ca*')
+    retcmd, rest = retdata.unpack('Ca*')
     raise RuntimeError, "invalid reply" if retcmd != cmd
     rest
   end
 
   def check(reply)
-    if reply.unpack('c').first != 0
+    if reply.unpack('C').first != 0
       raise CMSISError, "error reply from DAP"
     end
     reply
