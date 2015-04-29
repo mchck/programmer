@@ -156,7 +156,7 @@ class GDBServer
   end
 
   def parse_raw_binary(data)
-    data.gsub(/\x7d./){|m| (m[1].ord ^ 0x20).chr}
+    data.gsub(/\x7d./m){|m| (m[1].ord ^ 0x20).chr}
   end
 
   def attach
