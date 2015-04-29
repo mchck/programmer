@@ -13,6 +13,11 @@ class KinetisBase < ARMv7
   def initialize(bkend)
     super(bkend)
     @mdmap = @adiv5.ap(1)
+
+    # We might have a secure device
+    if (@mdmap.read_ap(0)) & 0b100 != 0
+      Log(:kinetis, 1){ "chip is secure, need mass erase to attach" }
+    end
   end
 
   def magic_halt
@@ -26,31 +31,40 @@ class KinetisBase < ARMv7
     # reset prevents this.
     # XXX hack
 
-    # We might have a secure device
-    if (@mdmap.read_ap(0)) & 0b100 != 0
-      Log(:kinetis, 1){ "chip is secure, need mass erase to attach" }
-    end
-
     Log(:kinetis, 1){ "holding system in reset" }
     # This waits until the system is in reset
-    while @mdmap.read_ap(0) & 0b1110 != 0b0010
-      @mdmap.write_ap(4, 0b11100)
+    while @mdmap.read_ap(0) & 0b1010 != 0b0010
+      @mdmap.write_ap(4, 0b1000)
     end
     # Now take system out of reset, but keep core in reset
     while @mdmap.read_ap(0) & 0b1110 != 0b1010
       @mdmap.write_ap(4, 0b10000)
     end
 
-    self.enable_debug!
-    self.catch_vector!(:CORERESET)
+    # self.enable_debug!
+    # self.catch_vector!(:CORERESET)
 
-    # Now release the core from reset
-    Log(:kinetis, 1){ "releasing core from reset" }
-    @mdmap.write_ap(4, 0)
+    # # Now release the core from reset
+    # Log(:kinetis, 1){ "releasing core from reset" }
+    # @mdmap.write_ap(4, 0)
 
     # self.halt_core!
     # self.catch_vector!(:CORERESET, false)
     # self.disable_debug!
+  end
+
+  def halt_core!
+    @scs.DHCSR.transact do |dhcsr|
+      dhcsr.DBGKEY = :key
+      dhcsr.C_DEBUGEN = true
+      dhcsr.C_HALT = true
+    end
+
+    # Release the core from reset - it may have been magic halted.
+    Log(:kinetis, 1){ "releasing core from reset" }
+    @mdmap.write_ap(4, 0)
+
+    super
   end
 
   def mass_erase
@@ -135,6 +149,19 @@ class Kinetis < KinetisBase
         self.fcmd = 0x0b
         self.addr = addr
         self.num_words = num_words
+      end
+    end
+
+    register :FCCOB_Program_Word, 0x04 do
+      unsigned :addr, [0, 23..0]
+      unsigned :fcmd, [3, 7..0]
+      unsigned :data, [4, 31..0]
+
+      def initialize(addr, data)
+        super()
+        self.fcmd = 0x06
+        self.addr = addr
+        self.data = data
       end
     end
 
@@ -382,9 +409,22 @@ class Kinetis < KinetisBase
     end
 
     register :SDID, 0x1024 do
+      unsigned :FAMID, 31..28
+      unsigned :SUBFAMID, 27..24
+      unsigned :SERIESID, 23..20
+      enum :SRAMSIZE, 19..16, {
+             512 => 0b0000,
+             1024 => 0b0001,
+             2048 => 0b0010,
+             4096 => 0b0011,
+             8192 => 0b0100,
+             16384 => 0b0101,
+             32768 => 0b0110,
+             65536 => 0b0111
+           }
       unsigned :REVID, 15..12
       unsigned :DIEID, 11..7
-      unsigned :FAMID, 6..4
+      unsigned :OLD_FAMID, 6..4
       enum :PINID, 3..0, {
         32 => 0b0010,
         48 => 0b0100,
@@ -492,30 +532,39 @@ class Kinetis < KinetisBase
   end
 
   FlashConfig = {
-    0b00000001 => {
-      :desc => "K20_50",
-      :sector_size => 1024,
-      :sector_blocks => 1,
-      :phrase_size => 4
+    {old_famid: 0, dieid: 1} => {
+      desc: "K20_50",
+      sector_size: 1024,
+      sector_blocks: 1,
+      phrase_size: 4,
+      program_method: :section
     },
-    0b00001001 => {
-      :desc => "K20_72",
-      :sector_size => 2048,
-      :sector_blocks => 2,
-      :phrase_size => 8
+    {old_famid: 0, dieid: 1} => {
+      desc: "K20_72",
+      sector_size: 2048,
+      sector_blocks: 2,
+      phrase_size: 8,
+      program_method: :section
     },
-    0b00100001 => {
-      :desc => "K22_50",
-      :sector_size => 2048,
-      :sector_blocks => 1,
-      :phrase_size => 8
+    {old_famid: 1, dieid: 4} => {
+      desc: "K22_50",
+      sector_size: 2048,
+      sector_blocks: 1,
+      phrase_size: 8,
+      program_method: :section
     },
-    0b00110001 => {
-      :desc => "K24",
-      :sector_size => 4096,
-      :sector_blocks => 2,
-      :phrase_size => 16
-    }
+    {old_famid: 1, dieid: 6} => {
+      desc: "K24",
+      sector_size: 4096,
+      sector_blocks: 2,
+      phrase_size: 16,
+      program_method: :section
+    },
+    {seriesid: 1} => {
+      desc: "KL family",
+      sector_size: 1024,
+      program_method: :word
+    },
   }
 
   def initialize(bkend, magic_halt=false)
@@ -524,7 +573,7 @@ class Kinetis < KinetisBase
     begin
       self.magic_halt if magic_halt
       self.probe!
-    rescue
+    rescue Adiv5::Fault => e
       # If we were unsuccessful, maybe we need to do kinetis reset magic
       if !magic_halt
         Log(:kinetis, 1){ "trouble initializing, retrying with halt" }
@@ -538,23 +587,26 @@ class Kinetis < KinetisBase
     @ftfl = Kinetis::FTFL.new(@dap)
     @flexram = Kinetis::FlexRAM.new(@dap)
     @sim = Kinetis::SIM.new(@dap)
-    flash_key = @sim.SDID.FAMID | (@sim.SDID.DIEID << 3);
-    if FlashConfig.has_key?(flash_key)
-        Log(:kinetis, 1){ "detected " + FlashConfig[flash_key][:desc] }
-        @sector_size = FlashConfig[flash_key][:sector_size]
-        @sector_blocks = FlashConfig[flash_key][:sector_blocks]
-        @phrase_size = FlashConfig[flash_key][:phrase_size]
-    else
-        raise RuntimeError, "unknown family-id and die-id combination %02x" % flash_key
+    sdid = @sim.SDID.dup
+
+    FlashConfig.each do |signature, config|
+      if signature.all?{|k,v| sdid.send(k.upcase) == v}
+        Log(:kinetis, 1){ "detected " + config[:desc] }
+        @flash_config = config
+      end
+    end
+
+    if !@flash_config
+      raise RuntimeError, "unknown family-id and die-id combination %08x" % sdid.to_i
     end
   end
 
   def program_sector(addr, data)
     if String === data
-      data = (data + "\0"*3).unpack('L*')
+      data = (data + "\0"*3).unpack('V*')
     end
 
-    if data.size != @sector_size / 4 || (addr & (@sector_size - 1) != 0)
+    if data.size != @flash_config[:sector_size] / 4 || (addr & (@flash_config[:sector_size] - 1) != 0)
       raise RuntimeError, "invalid data size or alignment"
     end
 
@@ -566,6 +618,15 @@ class Kinetis < KinetisBase
       end
     end
 
+    case @flash_config[:program_method]
+    when :section
+      program_section(addr, data)
+    when :word
+      program_words(addr, data)
+    end
+  end
+
+  def program_section(addr, data)
     if !@ftfl.FSTAT.RAMRDY
       # set FlexRAM to RAM
       @ftfl.cmd(FTFL::FCCOB_Set_FlexRAM.new(:ram))
@@ -573,26 +634,37 @@ class Kinetis < KinetisBase
 
     @ftfl.cmd(FTFL::FCCOB_Erase_Sector.new(addr))
     block_num = 0
-    block_size = @sector_size/@sector_blocks
-    while block_num < @sector_blocks
-        # divide by 4 to translate bytes into words, flexram needs this
-        sector_block = data.slice(block_num*block_size/4, block_size/4)
-        @flexram.write(0, sector_block)
-        @ftfl.cmd(FTFL::FCCOB_Program_Section.new(addr+block_num*block_size, block_size/@phrase_size))
-        block_num += 1
+    block_size = @flash_config[:sector_size]/@flash_config[:sector_blocks]
+    while block_num < @flash_config[:sector_blocks]
+      # divide by 4 to translate bytes into words, flexram needs this
+      sector_block = data.slice(block_num*block_size/4, block_size/4)
+      @flexram.write(0, sector_block)
+      @ftfl.cmd(FTFL::FCCOB_Program_Section.new(addr+block_num*block_size, block_size/@flash_config[:phrase_size]))
+      block_num += 1
+    end
+  end
+
+  def program_words(addr, data)
+    @ftfl.cmd(FTFL::FCCOB_Erase_Sector.new(addr))
+    pos = 0
+    data.each do |w|
+      @ftfl.cmd(FTFL::FCCOB_Program_Word.new(addr+pos, w))
+      pos += 4
     end
   end
 
   def program(addr, data)
-    super(addr, data, @sector_size)
+    super(addr, data, @flash_config[:sector_size])
   end
 
   def mmap_ranges
-    ramsize = @sim.SOPT.RAMSIZE
+    # old Kinetis set SOPT.RAMSIZE, new Kinetis (KL) use an invalid
+    # SOPT RAMSIZE (0b0000), and set SDID.SRAMSIZE instead.
+    ramsize = @sim.SOPT.RAMSIZE || @sim.SDID.SRAMSIZE
     flashsize = @sim.FCFG1.PFSIZE
     super +
       [
-       {:type => :flash, :start => 0, :length => flashsize, :blocksize => @sector_size},
+       {:type => :flash, :start => 0, :length => flashsize, :blocksize => @flash_config[:sector_size]},
        {:type => :ram, :start => 0x20000000 - ramsize/2, :length => ramsize}
       ]
   end
