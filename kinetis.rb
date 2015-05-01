@@ -282,14 +282,15 @@ class Kinetis < KinetisBase
         :LPO1K => 0b11
       }
       enum :RAMSIZE, 15..12, {
-        8192 => 0b0001,
-        16384 => 0b0011,
-        24576 => 0b0100,
-        32768 => 0b0101,
-        49152 => 0b0110,
-        65536 => 0b0111,
-        98304 => 0b1000,
-        131072 => 0b1001,
+        8*1024 => 0b0001,
+        16*1024 => 0b0011,
+        24*1024 => 0b0100,
+        32*1024 => 0b0101,
+        48*1024 => 0b0110,
+        64*1024 => 0b0111,
+        96*1024 => 0b1000,
+        128*1024 => 0b1001,
+        256*1024 => 0b1011,
       }
     end
 
@@ -532,38 +533,39 @@ class Kinetis < KinetisBase
   end
 
   FlashConfig = {
-    {old_famid: 0, dieid: 1} => {
+    {old_famid: 0, dieid: 0} => {
       desc: "K20_50",
       sector_size: 1024,
-      sector_blocks: 1,
       phrase_size: 4,
-      program_method: :section
+      program_method: :section,
+      ram_start: ->(size){0x20000000-size/2},
     },
     {old_famid: 0, dieid: 1} => {
       desc: "K20_72",
       sector_size: 2048,
-      sector_blocks: 2,
       phrase_size: 8,
-      program_method: :section
+      program_method: :section,
+      ram_start: ->(size){0x20000000-size/2},
     },
     {old_famid: 1, dieid: 4} => {
       desc: "K22_50",
       sector_size: 2048,
-      sector_blocks: 1,
       phrase_size: 8,
-      program_method: :section
+      program_method: :section,
+      ram_start: ->(size){0x20000000-size/2},
     },
     {old_famid: 1, dieid: 6} => {
       desc: "K24",
       sector_size: 4096,
-      sector_blocks: 2,
       phrase_size: 16,
-      program_method: :section
+      program_method: :section,
+      ram_start: 0x1fff0000,
     },
     {seriesid: 1} => {
       desc: "KL family",
       sector_size: 1024,
-      program_method: :word
+      program_method: :word,
+      ram_start: ->(size){0x20000000-size/4},
     },
   }
 
@@ -634,13 +636,12 @@ class Kinetis < KinetisBase
 
     @ftfl.cmd(FTFL::FCCOB_Erase_Sector.new(addr))
     block_num = 0
-    block_size = @flash_config[:sector_size]/@flash_config[:sector_blocks]
-    while block_num < @flash_config[:sector_blocks]
+    block_size = 1024
+    0.step(by: block_size, to: @flash_config[:sector_size]) do |ofs|
       # divide by 4 to translate bytes into words, flexram needs this
-      sector_block = data.slice(block_num*block_size/4, block_size/4)
+      sector_block = data[ofs/4, block_size/4]
       @flexram.write(0, sector_block)
-      @ftfl.cmd(FTFL::FCCOB_Program_Section.new(addr+block_num*block_size, block_size/@flash_config[:phrase_size]))
-      block_num += 1
+      @ftfl.cmd(FTFL::FCCOB_Program_Section.new(addr+ofs, block_size/@flash_config[:phrase_size]))
     end
   end
 
