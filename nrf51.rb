@@ -21,6 +21,13 @@ class NRF51 < ARMv7  # not actually true, it's and armv6 cortex m0 device.
 
     @sector_size = @ficr.CODEPAGESIZE
 
+    @ramsize = 0
+    @ficr.NUMRAMBLOCK.times do |i|
+      @ramsize += @ficr.SIZERAMBLOCK[i]
+    end
+
+    @flashsize = @ficr.CODESIZE * @ficr.CODEPAGESIZE
+
     self.probe!
   end
 
@@ -143,14 +150,7 @@ class NRF51 < ARMv7  # not actually true, it's and armv6 cortex m0 device.
   end
 
   def mmap_ranges
-    ramsize = 0
-    @ficr.NUMRAMBLOCK.times do |i|
-      ramsize += @ficr.SIZERAMBLOCK[i]
-    end
-
-    flashsize = @ficr.CODESIZE * @ficr.CODEPAGESIZE
-
-    Log(:nrf51, 1){ "#{@ficr.NUMRAMBLOCK} ram blocks, ramsize #{ramsize}, flashsize #{flashsize}" }
+    Log(:nrf51, 1){ "#{@ficr.NUMRAMBLOCK} ram blocks, ramsize #{@ramsize}, flashsize #{@flashsize}" }
     super +
       [
         {:type => :flash, :start => 0, :length => flashsize, :blocksize => @sector_size},
