@@ -38,12 +38,11 @@ class NRF51 < ARMv7  # not actually true, it's and armv6 cortex m0 device.
     register :CONFIG, 0x504 do # Configuration register
       #A RW WEN Program memory access mode. It is strongly recommended to only activate erase and write modes when they are actively used.
       enum :WEN, [0x00, 1..0], {
-         :REN => 0, # Read only access.
-         :WEN => 1, # Write Enabled.
-         :EEN => 2  # Erase enabled.
-      }
+             :REN => 0, # Read only access.
+             :WEN => 1, # Write Enabled.
+             :EEN => 2  # Erase enabled.
+           }
     end
-
 
     unsigned :ERASEPAGE, 0x508 # Register for erasing a page in code region 1
     unsigned :ERASEPCR1, 0x508 # Register for erasing a page in code region 1. Equivalent to ERASEPAGE.
@@ -101,9 +100,7 @@ class NRF51 < ARMv7  # not actually true, it's and armv6 cortex m0 device.
       if self.CONFIG.WEN != :REN
         raise RuntimeError, "can't set flash to read"
       end
-
     end
-
   end
 
   class FICR  # Factory Information Configuration Registers
@@ -121,7 +118,6 @@ class NRF51 < ARMv7  # not actually true, it's and armv6 cortex m0 device.
 
     unsigned :NUMRAMBLOCK, 0x034, :desc => "Number of individually controllable RAM blocks"
     unsigned :SIZERAMBLOCK, 0x038, :vector => 4, :desc => "Size of RAM block n in bytes"
-
   end
 
   #0x10001000 UICR UICR User Information Configuration Registers
@@ -140,10 +136,9 @@ class NRF51 < ARMv7  # not actually true, it's and armv6 cortex m0 device.
     end
 
     @nvmc.write(addr, data)
-
   end
 
-  def program(addr, data)
+  def program_section(addr, data)
     super(addr, data, @sector_size)
   end
 
@@ -157,20 +152,17 @@ class NRF51 < ARMv7  # not actually true, it's and armv6 cortex m0 device.
 
     Log(:nrf51, 1){ "#{@ficr.NUMRAMBLOCK} ram blocks, ramsize #{ramsize}, flashsize #{flashsize}" }
     super +
-        [
-            {:type => :flash, :start => 0, :length => flashsize, :blocksize => @sector_size},
-            {:type => :ram, :start => 0x20000000, :length => ramsize}
-        ]
+      [
+        {:type => :flash, :start => 0, :length => flashsize, :blocksize => @sector_size},
+        {:type => :ram, :start => 0x20000000, :length => ramsize}
+      ]
   end
-
 end
-
-
 
 if $0 == __FILE__
   require 'backend-driver'
-  adiv5 = Adiv5.new(BackendDriver.from_string(ARGV[0]))
-  k = NRF51.new(adiv5)
+  bkend = BackendDriver.from_string(ARGV[0])
+  k = NRF51.new(bkend)
   #r = k.program_sector(0x00014000, "\xa5"*1024)
-  puts Log.hexary(adiv5.dap.read(0x000000, :count => 1024/4))
+  puts Log.hexary(k.read_mem(0x000000, 1024).unpack('L*'))
 end
