@@ -81,14 +81,18 @@ class NRF51 < ARMv7  # not actually true, it's and armv6 cortex m0 device.
     def write(addr, data)
       self.CONFIG.WEN = :EEN
 
-      if self.CONFIG.WEN != :EEN
-        raise RuntimeError, "can't set flash to erase"
-      end
+      if addr < 0x10000000
+        # We only erase flash pages proper
 
-      self.ERASEPAGE = addr
-      while !self.READY.ready
-        Log(:nrf51, 1){ "waiting for flash erase completion" }
-        sleep 0.01
+        if self.CONFIG.WEN != :EEN
+          raise RuntimeError, "can't set flash to erase"
+        end
+
+        self.ERASEPAGE = addr
+        while !self.READY.ready
+          Log(:nrf51, 1){ "waiting for flash erase completion" }
+          sleep 0.01
+        end
       end
 
       self.CONFIG.WEN = :WEN
@@ -142,6 +146,7 @@ class NRF51 < ARMv7  # not actually true, it's and armv6 cortex m0 device.
       raise RuntimeError, "invalid data size or alignment"
     end
 
+    Log(:nrf51, 2){ "flashing addr %08x, size %#x" % [addr, data.size*4] }
     @nvmc.write(addr, data)
   end
 
@@ -153,8 +158,9 @@ class NRF51 < ARMv7  # not actually true, it's and armv6 cortex m0 device.
     Log(:nrf51, 1){ "#{@ficr.NUMRAMBLOCK} ram blocks, ramsize #{@ramsize}, flashsize #{@flashsize}" }
     super +
       [
-        {:type => :flash, :start => 0, :length => flashsize, :blocksize => @sector_size},
-        {:type => :ram, :start => 0x20000000, :length => ramsize}
+        {:type => :flash, :start => 0, :length => @flashsize, :blocksize => @sector_size},
+        {:type => :flash, :start => 0x10001000, :length => 0x100, :blocksize => 0x100},
+        {:type => :ram, :start => 0x20000000, :length => @ramsize}
       ]
   end
 end
