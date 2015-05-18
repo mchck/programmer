@@ -326,11 +326,13 @@ class GDBServer
       fd[addr - fa, data.length] = data
       return 'OK'
     end
+    @flashdata = {}
     raise RuntimeError, "memory region not prepared"
   end
 
   def flash_commit
     sections = @flashdata.sort_by{|k,v| k}
+    @flashdata = {}
 
     sections.each do |addr, data|
       @target.program(addr, data)
