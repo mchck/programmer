@@ -67,10 +67,12 @@ class Adiv5Swd
     when ACK_WAIT
       raise Adiv5::Wait
     when ParityError
-      # XXX retry
+    # XXX retry
+      raise RuntimeError, "handle partiy error"
     else
       # random other ack - protocol error
       # XXX retry
+      raise RuntimeError, "handle protocol error"
     end
 
     ret = reply[:val]
