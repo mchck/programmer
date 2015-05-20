@@ -190,7 +190,6 @@ class CmsisDap
 
     ret = []
     reqs.each_with_index do |r, i|
-      i += 1                    # each_with_index is 0 based
       r = r.dup
       r[:ack] = Adiv5Swd::ACK_OK
       ret << r
@@ -209,6 +208,8 @@ class CmsisDap
         r[:val] = val
       end
     end
+
+    Log(:swd, 2){ "transfer %s, ret %s" % [reqs.inspect, ret.inspect] }
 
     ret
   end
