@@ -46,5 +46,19 @@ module BackendDriver
     def from_string(s)
       from_string_set(s.split(/:/))
     end
+
+    def options(optparser)
+      opts = {}
+      optparser.on("--adapter=ADAPTER[,OPTS]", "Use debug adapter ADAPTER, with options OPTS") do |a|
+        fields = a.split(/,/)
+        opts[:name] = fields[0]
+        opts[:opts] = fields[1..-1]
+      end
+      opts
+    end
+
+    def from_opts(opts)
+      from_string_set(opts[:opts] + ["name=#{opts[:name]}"])
+    end
   end
 end
