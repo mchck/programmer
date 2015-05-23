@@ -335,7 +335,7 @@ class GDBServer
     @flashdata = {}
 
     sections.each do |addr, data|
-      @target.program(addr, data)
+      @target.program_section(addr, data)
     end
     reset_system(:ok)
   end

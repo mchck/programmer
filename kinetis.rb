@@ -20,7 +20,7 @@ class KinetisBase < ARMv7
     end
   end
 
-  def magic_halt
+  def magic_halt(halt=true)
     # Kinetis hack: hold system & core in reset, so that flash and
     # security will have a chance to init, and we have a chance to
     # access the system.  If we don't hold the system in reset, it
@@ -30,6 +30,13 @@ class KinetisBase < ARMv7
     # get kicked in the nuts regularly.  Holding the system & core in
     # reset prevents this.
     # XXX hack
+
+    if !halt
+      # Release the core from reset - it may have been magic halted.
+      Log(:kinetis, 1){ "releasing core from reset" }
+      @mdmap.write_ap(4, 0)
+      return
+    end
 
     Log(:kinetis, 1){ "holding system in reset" }
     # This waits until the system is in reset
@@ -60,9 +67,7 @@ class KinetisBase < ARMv7
       dhcsr.C_HALT = true
     end
 
-    # Release the core from reset - it may have been magic halted.
-    Log(:kinetis, 1){ "releasing core from reset" }
-    @mdmap.write_ap(4, 0)
+    self.magic_halt(false)
 
     super
   end
@@ -654,8 +659,17 @@ class Kinetis < KinetisBase
     end
   end
 
-  def program(addr, data)
+  def program_section(addr, data)
     super(addr, data, @flash_config[:sector_size])
+  end
+
+  def program(restart=true, &block)
+    self.magic_halt
+    yield
+  ensure
+    if restart
+      self.magic_halt(false)
+    end
   end
 
   def mmap_ranges
