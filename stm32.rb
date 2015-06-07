@@ -25,14 +25,12 @@ class STM32F4 < ARMv7
     @bank2 = (@device_id == 0x419)
     
     @flash_base = 0x08000000
-    @flash_sectors = 4.times.map do |index| [@flash_base + index * 0x4000, 0x4000, index, 0] end + 
+    @flash_sectors = 4.times.map { |index| [@flash_base + index * 0x4000, 0x4000, index, 0] } + 
       [[@flash_base + 0x10000, 0x10000, 4, 0]] + 
-      7.times.map do |index| [@flash_base + (index + 1) * 0x20000, 0x20000, index + 5, 0] end
+      7.times.map { |index| [@flash_base + (index + 1) * 0x20000, 0x20000, index + 5, 0] } 
     
     if @bank2
-      @flash_sectors += @flash_sectors.map do
-        |addr, len, index, bank| [addr + 0x100000, len, index, 1]
-      end
+      @flash_sectors += @flash_sectors.map { |addr, len, index, bank| [addr + 0x100000, len, index, 1] }
     end
     
     self.probe!
