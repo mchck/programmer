@@ -1,5 +1,6 @@
 $: << File.realpath('..', __FILE__)
 require 'kinetis'
+require 'stm32'
 require 'nrf51'
 require 'log'
 
@@ -8,7 +9,7 @@ module Device
     def detect(bkend)
       Log(:device, 1){ "detecting device" }
 
-      devices = [Kinetis, NRF51]
+      devices = [STM32F4, Kinetis, NRF51]
       begin
         if !devices.empty?
           d = devices.pop
