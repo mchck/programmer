@@ -5,7 +5,19 @@ require 'log'
 
 class STM32F4 < ARMv7
   def detect
-    @dap.IDR.to_i == 0x24770011 && @dap.read(0xE000ED00) == 0x410FC241 && [0x413, 0x419].include?(@dap.read(0xE0042000) & 0x00000FFF)
+    @dap.IDR.to_i == 0x24770011 && @dap.read(0xE000ED00) == 0x410FC241 && self.identify != nil
+  end
+
+  def identify
+    @device_id = @dap.read(0xE0042000) & 0x00000FFF
+    case @device_id
+      when 0x413 then "F405/F407/F415/F417"
+      when 0x419 then "F42x/F43x"
+      when 0x423 then "F401xB/F401xC"
+      when 0x433 then "F401xD/F401xE"
+      when 0x431 then "F411xC/F411xE"
+      else nil
+    end
   end
 
   def initialize(bkend, magic_halt=false)
@@ -16,13 +28,16 @@ class STM32F4 < ARMv7
       raise RuntimeError, "not a Cortex M4"
     end
 
-    @device_id = @dap.read(0xE0042000) & 0x00000FFF
-    if ![0x413, 0x419].include?(@device_id)
+    @device_id = self.identify
+    if @device_id == nil
       raise RuntimeError, "not a supported STM32F4 device"
     end
+    Log(:stm32, 1){ "found device ID: STM32%s" % @device_id }
     
     @flash = STM32F4::FlashController.new(@dap)
-    @bank2 = (@device_id == 0x419)
+    @flash_size = (@dap.read(0x1FFF7A20) >> 16)
+    Log(:stm32, 1){ "found flash size: %d KB" % @flash_size }
+    @bank2 = (@flash_size > 1024)
     
     @flash_base = 0x08000000
     @flash_sectors = 4.times.map { |index| [@flash_base + index * 0x4000, 0x4000, index, 0] } + 
@@ -40,6 +55,7 @@ class STM32F4 < ARMv7
     super +
       [
         {:type => :flash, :start => @flash_base, :length => 0x00200000, :blocksize => 0x100}, # XXXKF find block size
+        {:type => :flash, :start => 0x1FFF0000, :length => 0x00010000}, # unique device ID and flash size
         {:type => :ram,   :start => 0x20000000, :length => 0x0001C000}, # 112 KB SRAM
         {:type => :ram,   :start => 0x2001C000, :length => 0x00004000}, # 16 KB SRAM
         {:type => :ram,   :start => 0x20020000, :length => 0x00010000}, # 64 KB SRAM
