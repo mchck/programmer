@@ -5,14 +5,16 @@ require 'backend-driver'
 
 $stderr.puts "Attaching debugger..."
 adiv5 = Adiv5.new(BackendDriver.from_string(ARGV[0]))
-k = Device.detect(adiv5)
+k = nil
 
 if ARGV[1] == '--mass-erase'
+  k = Device.detect(adiv5, true) # Reset may not work properly for mass erase if chip already flashed
   $stderr.puts "done."
   $stderr.puts "Mass erasing chip..."
   k.mass_erase
   $stderr.puts "done."
 else
+  k = Device.detect(adiv5)
   $stderr.puts "done."
 
   firmware = File.read(ARGV[1], :mode => 'rb')

@@ -514,11 +514,11 @@ class Kinetis < KinetisBase
     }
   }
 
-  def self.detect(adiv5)
+  def self.detect(adiv5, magic_halt)
     mdmap = adiv5.ap(1)
     if mdmap && mdmap.IDR.to_i == 0x001c0000
       Log(:Kinetis, 1) {"Detected Kinetis."}
-      return Kinetis.new(adiv5)
+      return Kinetis.new(adiv5, magic_halt)
     end
     return nil
   end
