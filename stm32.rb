@@ -83,10 +83,10 @@ class STM32F4 < ARMv7
       unsigned :SNB, [0x00, 3..6], :desc => "Sector Number (within bank)"
       unsigned :SNBANK, [0x00, 7], :desc => "Sector Number Bank (F42x/F43x only)"
       enum :PSIZE, [0x01, 1..0], {
-        :width8 => 0b00,  # 1.8-2.1V
-        :width16 => 0b01, # 2.1-2.7V
-        :width32 => 0b10, # 2.7-3.6V
-        :width64 => 0b11, # external Vpp only
+        8 => 0b00,  # 1.8-2.1V
+        16 => 0b01, # 2.1-2.7V
+        32 => 0b10, # 2.7-3.6V
+        64 => 0b11, # external Vpp only
       }
       bool :MER1, [0x01, 7], :desc => "Mass Erase, bank 2 (F42x/F43x only)"
       bool :STRT, [0x02, 0], :desc => "Start Erase"
@@ -112,7 +112,7 @@ class STM32F4 < ARMv7
       end
     end
     self.wait_for_flash
-    @flash.CR.PSIZE = :width32 # 32 bits at a time, requires at least 2.7V
+    @flash.CR.PSIZE = 32 # 32 bits at a time, requires at least 2.7V
     Log(:stm32, 4){ "flash unlocked" }
   end
   
@@ -162,9 +162,11 @@ class STM32F4 < ARMv7
   def sector_erase(sector_no, sector_bank)
     Log(:stm32, 3){ "erasing sector %d, bank %d" % [sector_no, sector_bank] }
     self.flash_op do
-      @flash.CR.SER = true
-      @flash.CR.SNB = sector_no # sector number (within bank)
-      @flash.CR.SNBANK = sector_bank # sector bank number
+      @flash.CR.transact do |cr|
+        cr.SER = true
+        cr.SNB = sector_no # sector number (within bank)
+        cr.SNBANK = sector_bank # sector bank number
+      end
       @flash.CR.STRT = true
     end
   end
