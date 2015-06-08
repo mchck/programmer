@@ -7,7 +7,11 @@ $stderr.puts "Attaching debugger..."
 adiv5 = Adiv5.new(BackendDriver.from_string(ARGV[0]))
 k = nil
 
-if ARGV[1] == '--mass-erase'
+if ARGV[1] == '--detect'
+  k = Device.detect(adiv5, true) # Reset may not work properly for mass erase if chip already flashed
+  $stdout.puts k.desc
+  exit
+elsif ARGV[1] == '--mass-erase'
   k = Device.detect(adiv5, true) # Reset may not work properly for mass erase if chip already flashed
   $stderr.puts "done."
   $stderr.puts "Mass erasing chip..."

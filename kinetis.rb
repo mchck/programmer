@@ -3,6 +3,8 @@ require 'armv7'
 require 'register'
 
 class KinetisBase < ARMv7
+  attr_reader :desc
+
   def initialize(adiv5)
     super(adiv5)
     @mdmap = adiv5.ap(1)
@@ -545,6 +547,7 @@ class Kinetis < KinetisBase
     flash_key = @sim.SDID.FAMID | (@sim.SDID.DIEID << 3);
     if FlashConfig.has_key?(flash_key)
         Log(:kinetis, 1){ "detected " + FlashConfig[flash_key][:desc] }
+        @desc = FlashConfig[flash_key][:desc]
         @sector_size = FlashConfig[flash_key][:sector_size]
         @sector_blocks = FlashConfig[flash_key][:sector_blocks]
         @phrase_size = FlashConfig[flash_key][:phrase_size]
