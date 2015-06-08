@@ -6,13 +6,13 @@ require 'log'
 module Device
   class << self
 
-    def detect(adiv5)
+    def detect(adiv5, magic_halt=false)
 
       Log(:device, 1){ "detecting device" }
 
       ret = NRF51.detect(adiv5)
       if !ret
-        ret = Kinetis.detect(adiv5)
+        ret = Kinetis.detect(adiv5, magic_halt)
       end
 
       if !ret
