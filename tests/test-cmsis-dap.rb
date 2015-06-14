@@ -44,7 +44,7 @@ class TestCmsisDap < MiniTest::Test
   end
 
   def test_transfer_fault_but_exec
-    @m.expect(:submit, [1,FAULT,0x12345678].pack('ccV'), [5, [0,1,2].pack('c*')])
+    @m.expect(:submit, [0,FAULT,0x12345678].pack('ccV'), [5, [0,1,2].pack('c*')])
     ret = @d.transfer(op: :read, addr: 0, port: :dp)
     assert_equal FAULT, ret[:ack]
   end
