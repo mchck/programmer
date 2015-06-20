@@ -167,6 +167,10 @@ class STM32F4 < ARMv7
       end
       @flash.CR.STRT = true
     end
+    @flash.CR.MER = false
+    if @bank2
+      @flash.CR.MER = false
+    end
   end
   
   def sector_erase(sector_no, sector_bank)
@@ -179,6 +183,7 @@ class STM32F4 < ARMv7
       end
       @flash.CR.STRT = true
     end
+  @flash.CR.SER = false
   end
   
   def range_erase(addr, size)
@@ -205,10 +210,13 @@ class STM32F4 < ARMv7
     self.flash_op do
       @flash.CR.PG = true
       pos = 0
-      data.each do |w|
-        @dap.write(addr + pos, w)
-        pos += 4
+      maxlen = 64
+      unit = 4
+      while pos < data.length 
+        @dap.write(addr + pos * unit, data[pos..pos + maxlen - 1])
+        pos += maxlen
       end
+      @flash.CR.PG = false
     end
   end
 end
