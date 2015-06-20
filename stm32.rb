@@ -136,10 +136,6 @@ class STM32F4 < ARMv7
 
   def flash_op(&block)
     self.unlock_flash
-    @flash.CR.MER = true
-    if @bank2
-      @flash.CR.MER1 = true
-    end
     yield
     Log(:stm32, 4){ "waiting for flash transaction to be completed" }
     self.wait_for_flash
