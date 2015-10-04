@@ -538,14 +538,14 @@ class Kinetis < KinetisBase
   end
 
   FlashConfig = {
-    {old_famid: 0, dieid: 0} => {
+    {old_famid: 1, dieid: 0} => {
       desc: "K20_50",
       sector_size: 1024,
       phrase_size: 4,
       program_method: :section,
       ram_start: ->(size){0x20000000-size/2},
     },
-    {old_famid: 0, dieid: 1} => {
+    {old_famid: 1, dieid: 1} => {
       desc: "K20_72",
       sector_size: 2048,
       phrase_size: 8,
@@ -627,13 +627,13 @@ class Kinetis < KinetisBase
 
     case @flash_config[:program_method]
     when :section
-      program_section(addr, data)
+      ftfl_program_section(addr, data)
     when :word
-      program_words(addr, data)
+      ftfl_program_words(addr, data)
     end
   end
 
-  def program_section(addr, data)
+  def ftfl_program_section(addr, data)
     if !@ftfl.FSTAT.RAMRDY
       # set FlexRAM to RAM
       @ftfl.cmd(FTFL::FCCOB_Set_FlexRAM.new(:ram))
@@ -650,7 +650,7 @@ class Kinetis < KinetisBase
     end
   end
 
-  def program_words(addr, data)
+  def ftfl_program_words(addr, data)
     @ftfl.cmd(FTFL::FCCOB_Erase_Sector.new(addr))
     pos = 0
     data.each do |w|
