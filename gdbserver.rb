@@ -117,6 +117,9 @@ class GDBServer
     when /^s([[:xdigit:]]+)?$/
       # single step [addr]
       single_step($1)
+    when /^T([[:digit:]]+)$/
+      # Thread always alive
+      'OK'
     when /^vAttach;.*$/
       attach
     when /^vFlashErase:([[:xdigit:]]+),([[:xdigit:]]+)$/
