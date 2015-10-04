@@ -125,11 +125,14 @@ class CmsisDap
 
   CMD_DAP_INFO = 0
   CMD_CONNECT = 2
+  CMD_DAP_TRANSFER = 5
+  CMD_DAP_TRANSFER_BLOCK = 6
   CMD_DAP_SWJ_PINS = 0x10
   CMD_DAP_SWJ_CLOCK = 0x11
   CMD_DAP_SWJ_SEQUENCE = 0x12
-  CMD_DAP_TRANSFER = 5
-  CMD_DAP_TRANSFER_BLOCK = 6
+  CMD_DAP_JTAG_SEQUENCE = 0x14
+  CMD_DAP_JTAG_CONFIGURE = 0x15
+  CMD_DAP_JTAG_IDCODE = 0x16
 
   def cmd_dap_info
     ids = {
@@ -240,6 +243,24 @@ class CmsisDap
       ret[:val] = rest.unpack("V#{count}")
     end
     ret
+  end
+
+  def cmd_dap_jtag_sequence(seq)
+    tdolen = 0
+    data = [seq.count].pack('C')
+    seq.each do |s|
+      info = s[:len]
+      info = 0 if s[:len] == 64
+      info |= s[:tms] << 6
+      info |= 1 << 7 if s[:tdo?]
+      tdi = s[:tdi]
+      tdi = [tdi].pack('C') if tdi.is_a? Numeric
+      raise RuntimeError, "invalid tdi length" if tdi.bytesize != (s[:len]+7)/8
+      data += [info, tdi].pack('Ca*')
+      tdolen += (s[:len]+7)/8 if s[:tdo?]
+    end
+    r = check submit(CMD_DAP_JTAG_SEQUENCE, data)
+    r[1,tdolen]
   end
 
   def submit(cmd, data)
