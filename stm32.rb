@@ -94,7 +94,7 @@ class STM32F4 < ARMv7
       bool :PG, [0x00, 0], :desc => "Programming"
       bool :SER, [0x00, 1], :desc => "Sector Erase"
       bool :MER, [0x00, 2], :desc => "Mass Erase, bank 1"
-      unsigned :SNB, [0x00, 3..6], :desc => "Sector Number (within bank)"
+      unsigned :SNB, [0x00, 6..3], :desc => "Sector Number (within bank)"
       unsigned :SNBANK, [0x00, 7], :desc => "Sector Number Bank (F42x/F43x only)"
       enum :PSIZE, [0x01, 1..0], {
         8 => 0b00,  # 1.8-2.1V
@@ -136,10 +136,6 @@ class STM32F4 < ARMv7
 
   def flash_op(&block)
     self.unlock_flash
-    @flash.CR.MER = true
-    if @bank2
-      @flash.CR.MER1 = true
-    end
     yield
     Log(:stm32, 4){ "waiting for flash transaction to be completed" }
     self.wait_for_flash
@@ -171,6 +167,10 @@ class STM32F4 < ARMv7
       end
       @flash.CR.STRT = true
     end
+    @flash.CR.MER = false
+    if @bank2
+      @flash.CR.MER = false
+    end
   end
   
   def sector_erase(sector_no, sector_bank)
@@ -183,6 +183,7 @@ class STM32F4 < ARMv7
       end
       @flash.CR.STRT = true
     end
+  @flash.CR.SER = false
   end
   
   def range_erase(addr, size)
@@ -209,10 +210,13 @@ class STM32F4 < ARMv7
     self.flash_op do
       @flash.CR.PG = true
       pos = 0
-      data.each do |w|
-        @dap.write(addr + pos, w)
-        pos += 4
+      maxlen = 64
+      unit = 4
+      while pos < data.length 
+        @dap.write(addr + pos * unit, data[pos..pos + maxlen - 1])
+        pos += maxlen
       end
+      @flash.CR.PG = false
     end
   end
 end
