@@ -78,6 +78,12 @@ class NRF51 < ARMv7  # not actually true, it's and armv6 cortex m0 device.
         sleep 0.01
       end
 
+      self.ERASEUICR = 1
+      while !self.READY.ready
+        Log(:nrf51, 1){ "waiting for UICR erase completion" }
+        sleep 0.01
+      end
+
       self.CONFIG.WEN = :REN  # enable read
 
       if self.CONFIG.WEN != :REN
