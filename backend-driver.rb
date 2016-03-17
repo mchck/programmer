@@ -1,5 +1,6 @@
 require 'swd-mchck-bitbang'
 require 'swd-buspirate'
+require 'adiv5-swd-cmsis-dap'
 begin
   require 'swd-ftdi'
 rescue LoadError
@@ -11,11 +12,13 @@ module BackendDriver
     def create(name, opts)
       case name
       when 'ftdi', 'busblaster'
-        FtdiSwd.new(opts)
+        Adiv5Swd.new(FtdiSwd.new(opts))
       when 'buspirate'
-        BusPirateSwd.new(opts)
+        Adiv5Swd.new(BusPirateSwd.new(opts))
       when 'mchck'
-        MchckBitbangSwd.new(opts)
+        Adiv5Swd.new(MchckBitbangSwd.new(opts))
+      when 'cmsis-dap'
+        Adiv5SwdCmsisDap.new(opts)
       end
     end
 

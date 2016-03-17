@@ -505,6 +505,12 @@ class Kinetis < KinetisBase
       :sector_size => 2048,
       :sector_blocks => 1,
       :phrase_size => 8
+    },
+    0b00110001 => {
+      :desc => "K24",
+      :sector_size => 4096,
+      :sector_blocks => 2,
+      :phrase_size => 16
     }
   }
 
@@ -536,14 +542,14 @@ class Kinetis < KinetisBase
     @ftfl = Kinetis::FTFL.new(@dap)
     @flexram = Kinetis::FlexRAM.new(@dap)
     @sim = Kinetis::SIM.new(@dap)
-    flash_key = @sim.SDID.FAMID | (@sim.SDID.DIEID<<3);
+    flash_key = @sim.SDID.FAMID | (@sim.SDID.DIEID << 3);
     if FlashConfig.has_key?(flash_key)
         Log(:kinetis, 1){ "detected " + FlashConfig[flash_key][:desc] }
         @sector_size = FlashConfig[flash_key][:sector_size]
         @sector_blocks = FlashConfig[flash_key][:sector_blocks]
         @phrase_size = FlashConfig[flash_key][:phrase_size]
     else
-        raise RuntimeError, "unknown family-id and die-id combination"
+        raise RuntimeError, "unknown family-id and die-id combination %02x" % flash_key
     end
 
   end
