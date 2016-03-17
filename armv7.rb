@@ -10,9 +10,16 @@ require 'armv7-fpb'
 require 'armv7-dwt'
 
 class ARMv7
-  def initialize(adiv5)
-    @dap = adiv5.dap
+  class ProbeFailure < StandardError
+  end
+
+  def initialize(bkend)
+    @bkend = bkend
+    @adiv5 = Adiv5.new(@bkend)
+    @dap = @adiv5.dap
     @scs = SCS.new(@dap)
+
+    raise ProbeFailure, "#{self.class} not found" if !detect
   end
 
   def probe!
@@ -479,14 +486,25 @@ __end__
     [self.tdesc_feature_m_profile]
   end
 
-  def program(addr, data, sector_size)
+  def program(restart=true, &block)
+    self.halt_core!
+    yield
+  ensure
+    self.reset_system!
+    if restart
+      self.disable_debug!
+      self.continue!
+    end
+  end
+
+  def program_section(addr, data, sector_size)
     if addr & (sector_size - 1) != 0
       raise RuntimeError, "program needs to start on sector boundary"
     end
 
-    if !self.core_halted?
-      raise RuntimeError, "can only program flash when core is halted"
-    end
+    # if !self.core_halted?
+    #   raise RuntimeError, "can only program flash when core is halted"
+    # end
 
     # pad data
     if data.bytesize % sector_size != 0

@@ -1,69 +1,100 @@
-require 'adiv5-swd'
+require 'adiv5'
 require 'log'
 
 class BitbangSwd
   # We need to write on the negative edge, i.e. before asserting CLK.
   # We need to read on the positive edge, i.e. after having asserted CLK.
 
-  ACK_OK = 1
-  ACK_WAIT = 2
-  ACK_FAULT = 4
-
-  def initialize(opt = {})
-    @opt = opt
+  def initialize(lower)
+    @lower = lower
   end
 
   def raw_out(seq, seqlen=nil)
     seqlen ||= seq.length * 8
-    Log(:phys, 1){ "swd raw: #{seq.unpack("B#{seqlen}").first}" }
+    Log(:phys, 1){ "swd raw: %s" % seq.unpack("B#{seqlen}").first }
     if seqlen >= 8
-      write_bytes(seq[0..(seqlen / 8)])
+      @lower.write_bytes(seq[0..(seqlen / 8)])
     end
     if seqlen % 8 > 0
-      write_bits(seq[-1], seqlen % 8)
+      @lower.write_bits(seq[-1], seqlen % 8)
     end
   end
 
-  def transact(cmd, data=nil)
-    Log(:phys, 1){ 'transact %08b' % cmd }
-    case cmd & 0x4
-    when 0
-      dir = :out
-    else
-      dir = :in
+  def transfer_block(req)
+    seq = req[:val]
+    seq = seq.times unless seq.respond_to? :each
+
+    ret = req.dup
+    ret[:val] = []
+    seq.each do |thisval|
+      r = req.dup
+      r[:val] = thisval
+      # XXX inefficient for reads, always accessing RDBUFF
+      thisret = transfer(r)
+      ret[:ack] = thisret[:ack]
+      if thisret[:ack] == Adiv5Swd::ACK_OK
+        ret[:val] << thisret[:val] if req[:op] == :read
+      else
+        break
+      end
+    end
+    ret
+  end
+
+  def transfer(req)
+    cmd = 0x81
+    case req[:port]
+    when :ap
+      cmd |= 0x2
+    end
+    case req[:op]
+    when :read
+      cmd |= 0x4
+    end
+    cmd |= ((req[:addr] & 0xc) << 1)
+    parity = cmd
+    parity ^= parity >> 4
+    parity ^= parity >> 2
+    parity ^= parity >> 1
+    if parity & 1 != 0
+      cmd |= 0x20
     end
 
-    ack = write_cmd cmd.chr
+    Log(:phys, 1){ 'transfer %02x = %s %s %x' % [cmd, req[:op], req[:port], req[:addr]] }
 
-    case ack
-    when ACK_OK
-      # empty
-    when ACK_WAIT
-      raise Adiv5Swd::Wait
-    when ACK_FAULT
-      raise Adiv5Swd::Fault
+    ret = req.dup
+    ret[:ack] = @lower.write_cmd cmd.chr
+
+    case ret[:ack]
+    when Adiv5Swd::ACK_OK
+      case req[:op]
+      when :write
+        @lower.write_word_and_parity(req[:val], calc_parity(req[:val]))
+      when :read
+        data, par = @lower.read_word_and_parity
+        cal_par = calc_parity data
+        if par != cal_par
+          ret[:ack] = Adiv5Swd::ParityError
+        end
+
+        # reads to the AP are posted, so we need to get the result in a
+        # separate transfer.
+        if req[:port] == :ap
+          rdbufret = transfer(dir: :read, port: :dp, addr: Adiv5Swd::RDBUFF)
+          ret[:ack] = rdbufret[:ack]
+          data = rdbufret[:val]
+        end
+        ret[:val] = data
+      end
+    when Adiv5Swd::ACK_WAIT, Adiv5Swd::ACK_FAULT
+      # nothing
     else
       # we read data right now, just to make sure that we will never
       # work against the protocol
-      if dir == :in
-        data, par = read_word_and_parity
-      end
 
-      raise Adiv5Swd::ProtocolError
+      @lower.read_word_and_parity
     end
-
-    case dir
-    when :out
-      write_word_and_parity(data, calc_parity(data))
-      nil
-    when :in
-      data, par = read_word_and_parity
-      cal_par = calc_parity data
-      if par != cal_par
-        raise Adiv5Swd::ParityError
-      end
-      data
-    end
+    ret
   end
 
   def calc_parity(data)

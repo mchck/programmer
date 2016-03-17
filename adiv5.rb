@@ -4,6 +4,12 @@ require 'adiv5-dp'
 require 'adiv5-ap'
 
 class Adiv5
+  class Wait < StandardError
+  end
+
+  class Fault < StandardError
+  end
+
   def initialize(drv)
     @dp = DP.new(drv)
 

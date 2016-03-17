@@ -1,11 +1,17 @@
 require 'libusb'
 require 'log'
+require 'adiv5-swd'
 
-class Adiv5SwdCmsisDap
+class CmsisDap
   class CMSISError < StandardError
   end
 
   def initialize(args)
+    select_device(args)
+    setup_connection(args)
+  end
+
+  def select_device(args)
     # search for adapter
     @usb = LIBUSB::Context.new
     match = {}
@@ -33,8 +39,6 @@ class Adiv5SwdCmsisDap
     @inep = @iface.settings[0].endpoints.select{|e| e.direction == :in}.first
     @dev.claim_interface(@iface)
     @packet_size = 64
-
-    setup_connection(args)
   end
 
   def setup_connection(args)
@@ -45,127 +49,90 @@ class Adiv5SwdCmsisDap
     cmd_dap_swj_clock(args[:speed]*1000) if args[:speed]
 
     cmd_connect(:swd)
-    reset
+    reset_target(true) if args[:reset] && args[:reset] != 0
   end
 
-  def reset
-    cmd_dap_swj_sequence(255.chr * 7) # at least 50 high
-    cmd_dap_swj_sequence([0xe79e].pack('v')) # switch-to-swd magic
-    cmd_dap_swj_sequence(255.chr * 7) # at least 50 high
-    cmd_dap_swj_sequence(0.chr) # at least 1 low
-    read(:dp, 0, {})            # read IDCODE
+  def raw_out(seq, len=seq.bytesize*8)
+    cmd_dap_swj_sequence(seq, len)
   end
 
-  def max_transfer_block(dir)
-    overhead = {write: 5, read: 4}
-    (@packet_size - overhead[dir]) / 4
+  def flush!
   end
 
-  def handle_fault
-    status = read(:dp, CTRLSTAT)
-    if status.WDATAERR
-      # last write data was mangled or was dropped
-      ABORT.WDERRCLR = 1
-    # XXX reissue last write
-      true
-    else
-      raise Adiv5::Fault
-      false
+  def reset_target(assert)
+    cmd_dap_swj_pins(assert ? 0 : 0x80, 0x80, 0)
+  end
+
+  def transfer_block(req)
+    ret = req.dup
+    ret[:val] = []
+
+    r = req.dup
+    case req[:op]
+    when :read
+      count = req[:count]
+    when :write
+      count = req[:val].count
     end
+
+    pos = 0
+
+    while count > 0
+      c = count
+      if c > max_transfer_block(req[:op])
+        c = max_transfer_block(req[:op])
+      end
+
+      case req[:op]
+      when :read
+        r[:count] = c
+      when :write
+        r[:val] = req[:val][pos,c]
+      end
+
+      thisret = cmd_dap_transfer_block(r)
+      ret[:ack] = thisret[:ack]
+
+      if thisret[:count] > 0
+        if req[:op] == :read
+          ret[:val] += thisret[:val]
+        else
+          r[:val] = r[:val][thisret[:count]..-1]
+        end
+        count -= thisret[:count]
+        pos += thisret[:count]
+      end
+
+      if thisret[:ack] != Adiv5Swd::ACK_OK
+        break
+      end
+    end
+    ret
+  end
+
+  def transfer(req)
+    cmd_dap_transfer([req]).first
+  end
+
+  def max_transfer_block(op)
+    overhead = {write: 5, read: 4}
+    (@packet_size - overhead[op]) / 4
   end
 
   def maybe_wait_writebuf(req)
     # XXX if req is not waitable
   end
 
-  def read(port, addr, opt={})
-    r = {port: port, dir: :read, addr: addr}
-    if opt[:count]
-      count = opt[:count]
-      retval = []
-      while count > 0
-        c = count
-        if c > max_transfer_block(:read)
-          c = max_transfer_block(:read)
-        end
-        count -= c
-        r[:count] = c
-        ret = cmd_dap_transfer_block(r)
-        break if ret[:count] != r[:count] || ret[:response] != :ok
-        retval += ret[:val]
-      end
-      ret[:val] = retval
-    else
-      ret = cmd_dap_transfer([r]).first
-    end
-    case ret[:response]
-    when :wait
-      raise Adiv5::Wait
-    when :fault
-      handle_fault
-      XXX resubmit
-    when :proto_err
-      val = read(:dp, :read, RESEND)
-      if opt[:count]
-        ret[:val] << val
-        ret[:count] += 1
-        if ret[:count] < opt[:count]
-          ret[:val] += read(port, addr, {count: opt[:count] - ret[:count]})
-        end
-      else
-        ret[:val] = val
-      end
-    when :no_exec
-      # XXX resubmit
-      raise CMSISError
-    when :ok
-      # pass
-    end
-    ret[:val]
-  end
-
-  def write(port, addr, val)
-    r = {port: port, dir: :write, addr: addr, val: val}
-    if Array === val
-      count = val.count
-      while count > 0
-        c = count
-        if c > max_transfer_block(:write)
-          c = max_transfer_block(:write)
-        end
-        count -= c
-        r[:count] = c
-        ret = cmd_dap_transfer_block(r)
-        break if ret[:count] != r[:count] || ret[:response] != :ok
-      end
-    else
-      ret = cmd_dap_transfer([r]).first
-    end
-    case ret[:response]
-    when :wait
-      # XXX retry
-      raise Adiv5::Wait
-    when :fault
-      handle_fault
-      # XXX resubmit
-    when :proto_err
-      # XXX back off: write 33 zeros?
-      # XXX retry
-      raise Adiv5::ProtocolError
-    when :no_exec
-      # XXX resubmit
-      raise CMSISError
-    when :ok
-      # pass
-    end
-  end
-
   CMD_DAP_INFO = 0
   CMD_CONNECT = 2
-  CMD_DAP_SWJ_CLOCK = 0x11
-  CMD_DAP_SWJ_SEQUENCE = 0x12
   CMD_DAP_TRANSFER = 5
   CMD_DAP_TRANSFER_BLOCK = 6
+  CMD_DAP_SWJ_PINS = 0x10
+  CMD_DAP_SWJ_CLOCK = 0x11
+  CMD_DAP_SWJ_SEQUENCE = 0x12
+  CMD_DAP_JTAG_SEQUENCE = 0x14
+  CMD_DAP_JTAG_CONFIGURE = 0x15
+  CMD_DAP_JTAG_IDCODE = 0x16
 
   def cmd_dap_info
     ids = {
@@ -175,8 +142,8 @@ class Adiv5SwdCmsisDap
       fwver: 4,
       target_vendor: 5,
       target_device: 6,
-      capabilities: [0xf0, ->(d){{swd: 1, jtag: 2}.select{|k, v| d.unpack('c').first & v != 0}.map(&:first)}],
-      packet_count: [0xfe, ->(d){d.unpack('c').first}],
+      capabilities: [0xf0, ->(d){{swd: 1, jtag: 2}.select{|k, v| d.unpack('C').first & v != 0}.map(&:first)}],
+      packet_count: [0xfe, ->(d){d.unpack('C').first}],
       packet_size: [0xff, ->(d){d.unpack('v').first}]
     }
 
@@ -184,7 +151,7 @@ class Adiv5SwdCmsisDap
     ids.each do |k, v|
       v, cb = v if v.is_a? Array
       buf = submit(CMD_DAP_INFO, [v].pack('c*'))
-      len, rest = buf.unpack('ca*')
+      len, rest = buf.unpack('Ca*')
       rest = rest[0,len]
       rest = cb.(rest) if cb
       ret[k] = rest
@@ -195,7 +162,12 @@ class Adiv5SwdCmsisDap
   def cmd_connect(mode)
     modetab = {swd: 1, jtag: 2}
     r = submit(CMD_CONNECT, [modetab[mode]].pack('c'))
-    raise RuntimeError "could not connect as #{mode}" if r.unpack('c').first == 0
+    raise RuntimeError "could not connect as #{mode}" if r.unpack('C').first == 0
+  end
+
+  def cmd_dap_swj_pins(out, select, wait)
+    val = submit(CMD_DAP_SWJ_PINS, [out, select, wait].pack('ccV'))
+    val.unpack('C').first
   end
 
   def cmd_dap_swj_clock(freq)
@@ -211,41 +183,42 @@ class Adiv5SwdCmsisDap
     reqs.each do |r|
       rc = 0
       rc |= 1 if r[:port] == :ap
-      rc |= 2 if r[:dir] == :read
+      rc |= 2 if r[:op] == :read
       rc |= r[:addr]
       data += [rc].pack('c')
-      data += [r[:val]].pack('V') if r[:dir] == :write
+      data += [r[:val]].pack('V') if r[:op] == :write
     end
     result = submit(CMD_DAP_TRANSFER, data)
-    count, last_resp, rest = result.unpack('cca*')
+    count, last_resp, rest = result.unpack('CCa*')
 
     ret = []
     reqs.each_with_index do |r, i|
       r = r.dup
+      r[:ack] = Adiv5Swd::ACK_OK
       ret << r
-      r[:response] = :ok
       if i == count
-        swd_ack = {1 => :ok, 2 => :wait, 4 => :fault}
-        r[:response] = swd_ack[last_resp&7]
-        r[:response] = :proto_err if last_resp & 8 != 0
-        r[:mismatch] = true if last_resp & 16
-        next if r[:response] != :ok
+        r[:ack] = last_resp
+        r[:ack] = Adiv5Swd::ParityError if last_resp & 8 != 0
+        r[:mismatch] = true if last_resp & 16 != 0
+        next if r[:ack] != Adiv5Swd::ACK_OK
       elsif i > count
-        r[:response] = :no_exec
+        r[:ack] = :no_exec
         next
       end
 
-      if r[:dir] == :read
+      if r[:op] == :read
         val, rest = rest.unpack('Va*')
         r[:val] = val
       end
     end
 
+    Log(:swd, 2){ "transfer %s, ret %s" % [reqs.inspect, ret.inspect] }
+
     ret
   end
 
   def cmd_dap_transfer_block(req)
-    if req[:dir] == :read
+    if req[:op] == :read
       count = req[:count]
     else
       count = req[:val].count
@@ -254,23 +227,40 @@ class Adiv5SwdCmsisDap
     data = [0, count].pack('cv')
     rc = 0
     rc |= 1 if req[:port] == :ap
-    rc |= 2 if req[:dir] == :read
+    rc |= 2 if req[:op] == :read
     rc |= req[:addr]
     data += [rc].pack('c')
-    data += req[:val].pack('V*') if req[:dir] == :write
+    data += req[:val].pack('V*') if req[:op] == :write
 
     result = submit(CMD_DAP_TRANSFER_BLOCK, data)
     ret = req.dup
 
-    count, resp, rest = result.unpack('vca*')
-    swd_ack = {1 => :ok, 2 => :wait, 4 => :fault}
-    ret[:response] = swd_ack[resp&7]
-    ret[:response] = :proto_err if resp & 8 != 0
+    count, resp, rest = result.unpack('vCa*')
+    ret[:ack] = resp
+    ret[:ack] = Adiv5Swd::ParityError if resp & 8 != 0
     ret[:count] = count
-    if req[:dir] == :read
+    if req[:op] == :read
       ret[:val] = rest.unpack("V#{count}")
     end
     ret
+  end
+
+  def cmd_dap_jtag_sequence(seq)
+    tdolen = 0
+    data = [seq.count].pack('C')
+    seq.each do |s|
+      info = s[:len]
+      info = 0 if s[:len] == 64
+      info |= s[:tms] << 6
+      info |= 1 << 7 if s[:tdo?]
+      tdi = s[:tdi]
+      tdi = [tdi].pack('C') if tdi.is_a? Numeric
+      raise RuntimeError, "invalid tdi length" if tdi.bytesize != (s[:len]+7)/8
+      data += [info, tdi].pack('Ca*')
+      tdolen += (s[:len]+7)/8 if s[:tdo?]
+    end
+    r = check submit(CMD_DAP_JTAG_SEQUENCE, data)
+    r[1,tdolen]
   end
 
   def submit(cmd, data)
@@ -297,13 +287,13 @@ class Adiv5SwdCmsisDap
     end
     Log(:swd, 3){ "reply %s" % retdata.unpack('H*').first }
 
-    retcmd, rest = retdata.unpack('ca*')
+    retcmd, rest = retdata.unpack('Ca*')
     raise RuntimeError, "invalid reply" if retcmd != cmd
     rest
   end
 
   def check(reply)
-    if reply.unpack('c').first != 0
+    if reply.unpack('C').first != 0
       raise CMSISError, "error reply from DAP"
     end
     reply

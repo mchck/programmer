@@ -4,25 +4,14 @@ require 'register'
 require 'log'
 
 class NRF51 < ARMv7  # not actually true, it's and armv6 cortex m0 device.
-  def self.detect(adiv5)
-
-    mdmap = adiv5.ap(0)
-    if mdmap && mdmap.IDR.to_i == 0x4770021
-      Log(:nrf51, 1) {"Detected nRF51."}
-      return NRF51.new(adiv5)
-    else
-      return nil
-    end
+  def detect
+    @dap.IDR.to_i == 0x4770021
   end
 
-  def initialize(adiv5, magic_halt=false)
-    super(adiv5)
-    @mdmap = adiv5.ap(0)
+  def initialize(bkend, magic_halt=false)
+    super(bkend)
 
-    if !@mdmap || @mdmap.IDR.to_i != 0x4770021
-      raise RuntimeError, "not an Nrf51 device"
-    end
-    cpuid = adiv5.dap.read(0xE000ED00)
+    cpuid = @dap.read(0xE000ED00)
     if cpuid != 0x410CC200
       raise RuntimeError, "not a Cortex M0"
     end
@@ -32,11 +21,15 @@ class NRF51 < ARMv7  # not actually true, it's and armv6 cortex m0 device.
 
     @sector_size = @ficr.CODEPAGESIZE
 
+    @ramsize = 0
+    @ficr.NUMRAMBLOCK.times do |i|
+      @ramsize += @ficr.SIZERAMBLOCK[i]
+    end
+
+    @flashsize = @ficr.CODESIZE * @ficr.CODEPAGESIZE
+
     self.probe!
-
   end
-
-
 
   class NVMC # Non-Volatile Memory Controller
     include Peripheral
@@ -52,12 +45,11 @@ class NRF51 < ARMv7  # not actually true, it's and armv6 cortex m0 device.
     register :CONFIG, 0x504 do # Configuration register
       #A RW WEN Program memory access mode. It is strongly recommended to only activate erase and write modes when they are actively used.
       enum :WEN, [0x00, 1..0], {
-         :REN => 0, # Read only access.
-         :WEN => 1, # Write Enabled.
-         :EEN => 2  # Erase enabled.
-      }
+             :REN => 0, # Read only access.
+             :WEN => 1, # Write Enabled.
+             :EEN => 2  # Erase enabled.
+           }
     end
-
 
     unsigned :ERASEPAGE, 0x508 # Register for erasing a page in code region 1
     unsigned :ERASEPCR1, 0x508 # Register for erasing a page in code region 1. Equivalent to ERASEPAGE.
@@ -95,14 +87,18 @@ class NRF51 < ARMv7  # not actually true, it's and armv6 cortex m0 device.
     def write(addr, data)
       self.CONFIG.WEN = :EEN
 
-      if self.CONFIG.WEN != :EEN
-        raise RuntimeError, "can't set flash to erase"
-      end
+      if addr < 0x10000000
+        # We only erase flash pages proper
 
-      self.ERASEPAGE = addr
-      while !self.READY.ready
-        Log(:nrf51, 1){ "waiting for flash erase completion" }
-        sleep 0.01
+        if self.CONFIG.WEN != :EEN
+          raise RuntimeError, "can't set flash to erase"
+        end
+
+        self.ERASEPAGE = addr
+        while !self.READY.ready
+          Log(:nrf51, 1){ "waiting for flash erase completion" }
+          sleep 0.01
+        end
       end
 
       self.CONFIG.WEN = :WEN
@@ -121,9 +117,7 @@ class NRF51 < ARMv7  # not actually true, it's and armv6 cortex m0 device.
       if self.CONFIG.WEN != :REN
         raise RuntimeError, "can't set flash to read"
       end
-
     end
-
   end
 
   class FICR  # Factory Information Configuration Registers
@@ -141,7 +135,6 @@ class NRF51 < ARMv7  # not actually true, it's and armv6 cortex m0 device.
 
     unsigned :NUMRAMBLOCK, 0x034, :desc => "Number of individually controllable RAM blocks"
     unsigned :SIZERAMBLOCK, 0x038, :vector => 4, :desc => "Size of RAM block n in bytes"
-
   end
 
   #0x10001000 UICR UICR User Information Configuration Registers
@@ -159,38 +152,29 @@ class NRF51 < ARMv7  # not actually true, it's and armv6 cortex m0 device.
       raise RuntimeError, "invalid data size or alignment"
     end
 
+    Log(:nrf51, 2){ "flashing addr %08x, size %#x" % [addr, data.size*4] }
     @nvmc.write(addr, data)
-
   end
 
-  def program(addr, data)
+  def program_section(addr, data)
     super(addr, data, @sector_size)
   end
 
   def mmap_ranges
-    ramsize = 0
-    @ficr.NUMRAMBLOCK.times do |i|
-      ramsize += @ficr.SIZERAMBLOCK[i]
-    end
-
-    flashsize = @ficr.CODESIZE * @ficr.CODEPAGESIZE
-
-    Log(:nrf51, 1){ "#{@ficr.NUMRAMBLOCK} ram blocks, ramsize #{ramsize}, flashsize #{flashsize}" }
+    Log(:nrf51, 1){ "#{@ficr.NUMRAMBLOCK} ram blocks, ramsize #{@ramsize}, flashsize #{@flashsize}" }
     super +
-        [
-            {:type => :flash, :start => 0, :length => flashsize, :blocksize => @sector_size},
-            {:type => :ram, :start => 0x20000000, :length => ramsize}
-        ]
+      [
+        {:type => :flash, :start => 0, :length => @flashsize, :blocksize => @sector_size},
+        {:type => :flash, :start => 0x10001000, :length => 0x100, :blocksize => 0x100},
+        {:type => :ram, :start => 0x20000000, :length => @ramsize}
+      ]
   end
-
 end
-
-
 
 if $0 == __FILE__
   require 'backend-driver'
-  adiv5 = Adiv5.new(BackendDriver.from_string(ARGV[0]))
-  k = NRF51.new(adiv5)
+  bkend = BackendDriver.from_string(ARGV[0])
+  k = NRF51.new(bkend)
   #r = k.program_sector(0x00014000, "\xa5"*1024)
-  puts Log.hexary(adiv5.dap.read(0x000000, :count => 1024/4))
+  puts Log.hexary(k.read_mem(0x000000, 1024).unpack('L*'))
 end

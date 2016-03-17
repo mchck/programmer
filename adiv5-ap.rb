@@ -307,9 +307,9 @@ class Adiv5
     end
     alias :[] :read
 
-    def write(addr, val)
+    def write(addr, val, opt={})
       Log(:mem, 1){ "write %08x = %s" % [addr, Log.hexary(val)] }
-      transfer(:out, addr, val)
+      transfer(:out, addr, val, opt)
     end
     alias :[]= :write
   end

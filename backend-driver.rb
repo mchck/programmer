@@ -1,6 +1,6 @@
 require 'swd-mchck-bitbang'
 require 'swd-buspirate'
-require 'adiv5-swd-cmsis-dap'
+require 'cmsis-dap'
 begin
   require 'swd-ftdi'
 rescue LoadError
@@ -12,13 +12,15 @@ module BackendDriver
     def create(name, opts)
       case name
       when 'ftdi', 'busblaster'
-        Adiv5Swd.new(FtdiSwd.new(opts))
+        Adiv5Swd.new(BitbangSwd.new(FtdiSwd.new(opts)))
       when 'buspirate'
-        Adiv5Swd.new(BusPirateSwd.new(opts))
+        Adiv5Swd.new(BitbangSwd.new(BusPirateSwd.new(opts)))
       when 'mchck'
-        Adiv5Swd.new(MchckBitbangSwd.new(opts))
+        Adiv5Swd.new(BitbangSwd.new(MchckBitbangSwd.new(opts)))
       when 'cmsis-dap'
-        Adiv5SwdCmsisDap.new(opts)
+        Adiv5Swd.new(CmsisDap.new(opts))
+      else
+        raise RuntimeError, "unknown driver name `#{name}'"
       end
     end
 
@@ -43,6 +45,20 @@ module BackendDriver
 
     def from_string(s)
       from_string_set(s.split(/:/))
+    end
+
+    def options(optparser)
+      opts = {}
+      optparser.on("--adapter=ADAPTER[,OPTS]", "Use debug adapter ADAPTER, with options OPTS") do |a|
+        fields = a.split(/,/)
+        opts[:name] = fields[0]
+        opts[:opts] = fields[1..-1]
+      end
+      opts
+    end
+
+    def from_opts(opts)
+      from_string_set(opts[:opts] + ["name=#{opts[:name]}"])
     end
   end
 end

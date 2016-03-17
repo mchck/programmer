@@ -117,6 +117,9 @@ class GDBServer
     when /^s([[:xdigit:]]+)?$/
       # single step [addr]
       single_step($1)
+    when /^T([[:digit:]]+)$/
+      # Thread always alive
+      'OK'
     when /^vAttach;.*$/
       attach
     when /^vFlashErase:([[:xdigit:]]+),([[:xdigit:]]+)$/
@@ -326,14 +329,16 @@ class GDBServer
       fd[addr - fa, data.length] = data
       return 'OK'
     end
+    @flashdata = {}
     raise RuntimeError, "memory region not prepared"
   end
 
   def flash_commit
     sections = @flashdata.sort_by{|k,v| k}
+    @flashdata = {}
 
     sections.each do |addr, data|
-      @target.program(addr, data)
+      @target.program_section(addr, data)
     end
     reset_system(:ok)
   end
@@ -346,8 +351,8 @@ if $0 == __FILE__
     cmd = ARGV[2..-1]
   end
 
-  adiv5 = Adiv5.new(BackendDriver.from_string(ARGV[0]))
-  k = Device.detect(adiv5)
+  bkend = BackendDriver.from_string(ARGV[0])
+  k = Device.detect(bkend)
 
   if cmd
     trap("INT", "IGNORE")
