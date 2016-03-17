@@ -80,7 +80,7 @@ class BitbangSwd
         # reads to the AP are posted, so we need to get the result in a
         # separate transfer.
         if req[:port] == :ap
-          rdbufret = transfer(dir: :read, port: :dp, addr: Adiv5Swd::RDBUFF)
+          rdbufret = transfer(op: :read, port: :dp, addr: Adiv5Swd::RDBUFF)
           ret[:ack] = rdbufret[:ack]
           data = rdbufret[:val]
         end
@@ -108,5 +108,8 @@ class BitbangSwd
 
   def hexify(str)
     str.unpack('C*').map{|e| "%02x" % e}.join(' ')
+  end
+
+  def flush!
   end
 end

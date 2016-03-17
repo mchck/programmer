@@ -54,7 +54,7 @@ class Adiv5Swd
     if !opt[:count]
       reply = @drv.transfer(req)
     else
-      req[:count] = readcount
+      req[:val] = readcount
       reply = @drv.transfer_block(req)
     end
 
