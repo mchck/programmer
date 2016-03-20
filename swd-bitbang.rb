@@ -21,7 +21,7 @@ class BitbangSwd
   end
 
   def transfer_block(req)
-    seq = req[:count]
+    seq = req[:val]
     seq = seq.times unless seq.respond_to? :each
 
     ret = req.dup
