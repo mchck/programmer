@@ -3,6 +3,11 @@ $: << File.realpath('..', __FILE__)
 require 'device'
 require 'backend-driver'
 
+if ARGV[1] == '--version'
+  $stdout.puts "McHCK Programmer (Input Club edition)"
+  exit
+end
+
 $stderr.puts "Attaching debugger..."
 adiv5 = Adiv5.new(BackendDriver.from_string(ARGV[0]))
 k = nil
