@@ -4,6 +4,7 @@ require 'register'
 
 class KinetisBase < ARMv7
   attr_reader :desc
+  attr_reader :detect_info
 
   def initialize(adiv5)
     super(adiv5)
@@ -238,11 +239,27 @@ class Kinetis < KinetisBase
     end
   end
 
+  class SCB
+    include Peripheral
+
+    default_address 0xE000ED00
+
+    unsigned :CPUID_RAW, 0x00
+    register :CPUID, 0x00 do
+      unsigned :IMPLEMENTOR, 31..24
+      unsigned :VARIANT, 23..20
+      unsigned :ARCH, 19..16
+      unsigned :PARTNO, 15..4
+      unsigned :REV, 3..0
+    end
+  end
+
   class SIM
     include Peripheral
 
     default_address 0x40047000
 
+    unsigned :SOPT_RAW, 0x00
     register :SOPT, 0x00 do
       bool :USBREGEN, 31
       bool :USBSSTBY, 30
@@ -379,6 +396,7 @@ class Kinetis < KinetisBase
       }
     end
 
+    unsigned :SDID_RAW, 0x1024
     register :SDID, 0x1024 do
       unsigned :REVID, 15..12
       unsigned :DIEID, 11..7
@@ -442,6 +460,7 @@ class Kinetis < KinetisBase
       unsigned :USBFRAC, 0
     end
 
+    unsigned :FCFG1_RAW, 0x104c
     register :FCFG1, 0x104c do
       enum :NVMSIZE, 31..28, {
         0 => 0b0000,
@@ -544,6 +563,21 @@ class Kinetis < KinetisBase
     @ftfl = Kinetis::FTFL.new(@dap)
     @flexram = Kinetis::FlexRAM.new(@dap)
     @sim = Kinetis::SIM.new(@dap)
+    @scb = Kinetis::SCB.new(@dap)
+
+    Log(:kinetis, 1){ "SIM_SOPT1 " + sprintf("0x%08x", @sim.SOPT_RAW) }
+    Log(:kinetis, 1){ "SIM_SDID  " + sprintf("0x%08x", @sim.SDID_RAW) }
+    Log(:kinetis, 1){ "SIM_FCFG1 " + sprintf("0x%08x", @sim.FCFG1_RAW) }
+    Log(:kinetis, 1){ "SCB_CPUID " + sprintf("0x%08x", @scb.CPUID_RAW) }
+
+    @detect_info = sprintf(
+"SIM_SOPT1: : %08x
+SIM_SDID : : %08x
+SIM_FCFG1: : %08x
+SCB_CPUID: : %08x
+", @sim.SOPT_RAW, @sim.SDID_RAW, @sim.FCFG1_RAW, @scb.CPUID_RAW)
+
+    # Use FAMID and DIEID to determine which kinetis MCU
     flash_key = @sim.SDID.FAMID | (@sim.SDID.DIEID << 3);
     if FlashConfig.has_key?(flash_key)
         Log(:kinetis, 1){ "detected " + FlashConfig[flash_key][:desc] }

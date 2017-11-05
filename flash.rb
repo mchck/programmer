@@ -16,6 +16,11 @@ if ARGV[1] == '--detect'
   k = Device.detect(adiv5, true) # Reset may not work properly for mass erase if chip already flashed
   $stdout.puts k.desc
   exit
+elsif ARGV[1] == '--detect2file'
+  k = Device.detect(adiv5, true) # Reset may not work properly for mass erase if chip already flashed
+  $stdout.puts k.desc
+  File.open('/tmp/detectlog.log', 'w') { |file| file.write(k.detect_info) }
+  exit
 elsif ARGV[1] == '--mass-erase'
   k = Device.detect(adiv5, true) # Reset may not work properly for mass erase if chip already flashed
   $stderr.puts "done."
