@@ -13,10 +13,6 @@ favorite platforms.
 ** Platforms
 - Freescale Kinetis K20 (e.g. MC HCK)
 
-* Contact
-Write to our mailing list at [[nerds@mchck.org]] for any questions or
-feedback.
-
 * License
 Copyright (c) 2012,2013 Simon Schubert and the MC HCK Project.
 
